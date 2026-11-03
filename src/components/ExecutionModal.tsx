@@ -36,7 +36,7 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({
           <div>
             <h4 className="text-base font-bold text-white tracking-tight">{title}</h4>
             <p className="text-xs text-slate-400">
-              {isComplete ? 'Operation completed successfully.' : 'Processing file pipeline...'}
+              {isComplete ? 'Operation completed successfully.' : 'Loading and processing files...'}
             </p>
           </div>
         </div>

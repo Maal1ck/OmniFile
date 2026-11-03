@@ -12,8 +12,6 @@ import {
   readFilesFromDataTransfer,
   parseFileList,
   generateSampleFiles,
-  getFileExtension,
-  classifyFileCategory,
 } from '../utils/fileHelpers';
 
 interface DropZoneProps {
@@ -67,12 +65,20 @@ export const DropZone: React.FC<DropZoneProps> = ({
         );
         if (extracted.length > 0) {
           onFilesAdded(extracted);
+        } else if (e.dataTransfer.files.length > 0) {
+          const parsed = await parseFileList(
+            e.dataTransfer.files,
+            (percent, currentItem, count, total) => {
+              onUpdateProgress?.(percent, `${currentItem} (${count}/${total} files)`);
+            }
+          );
+          if (parsed.length > 0) onFilesAdded(parsed);
         }
       } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        const parsed = parseFileList(
+        const parsed = await parseFileList(
           e.dataTransfer.files,
-          (percent, currentItem, count) => {
-            onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
+          (percent, currentItem, count, total) => {
+            onUpdateProgress?.(percent, `${currentItem} (${count}/${total} files)`);
           }
         );
         if (parsed.length > 0) {
@@ -86,95 +92,26 @@ export const DropZone: React.FC<DropZoneProps> = ({
     }
   };
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      if (onStartProgress) {
-        onStartProgress('Ingesting Selected Files...');
-      }
-      const parsed = parseFileList(
-        e.target.files,
-        (percent, currentItem, count) => {
-          onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    onStartProgress?.('Ingesting Selected Files...');
+    try {
+      const parsed = await parseFileList(
+        fileList,
+        (percent, currentItem, count, total) => {
+          onUpdateProgress?.(percent, `${currentItem} (${count}/${total} files)`);
         }
       );
       onFilesAdded(parsed);
+    } finally {
       e.target.value = '';
-      if (onFinishProgress) {
-        onFinishProgress();
-      }
+      onFinishProgress?.();
     }
   };
 
-  const handleOpenFolderNative = async () => {
-    // Check if Chromium / Windows Native Directory Picker is available
-    if ('showDirectoryPicker' in window) {
-      try {
-        const dirHandle = await (window as unknown as {
-          showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
-        }).showDirectoryPicker();
-
-        if (onStartProgress) {
-          onStartProgress(`Ingesting Directory: ${dirHandle.name}...`);
-        }
-
-        const gatheredFiles: VirtualFile[] = [];
-        let count = 0;
-
-        const readDirectoryHandle = async (
-          handle: FileSystemDirectoryHandle,
-          currentPath: string = ''
-        ) => {
-          for await (const entry of (handle as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values()) {
-            if (entry.kind === 'file') {
-              const fileHandle = entry as unknown as FileSystemFileHandle;
-              const file = await fileHandle.getFile();
-              const relativePath = currentPath ? `${currentPath}/${file.name}` : file.name;
-              const ext = getFileExtension(file.name);
-              count++;
-              onUpdateProgress?.(
-                Math.min(95, Math.round((count / (count + 5)) * 100)),
-                `${file.name} (${count} files)`
-              );
-              gatheredFiles.push({
-                id: `native-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-                name: file.name,
-                relativePath,
-                size: file.size,
-                type: file.type,
-                extension: ext,
-                lastModified: file.lastModified,
-                category: classifyFileCategory(ext),
-                selected: true,
-                content: file,
-              });
-            } else if (entry.kind === 'directory') {
-              const subDirHandle = entry as unknown as FileSystemDirectoryHandle;
-              const newPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
-              onUpdateProgress?.(Math.min(95, count * 2), `Scanning folder: ${entry.name}`);
-              await readDirectoryHandle(subDirHandle, newPath);
-            }
-          }
-        };
-
-        await readDirectoryHandle(dirHandle, dirHandle.name);
-        if (gatheredFiles.length > 0) {
-          onFilesAdded(gatheredFiles);
-        }
-        if (onFinishProgress) {
-          onFinishProgress();
-        }
-        return;
-      } catch (err) {
-        // User canceled or denied permission, fall back to input
-        if (onFinishProgress) onFinishProgress();
-        if ((err as Error).name !== 'AbortError') {
-          folderInputRef.current?.click();
-        }
-        return;
-      }
-    }
-
-    // Standard fallback
+  const handleOpenFolderNative = () => {
     folderInputRef.current?.click();
   };
 

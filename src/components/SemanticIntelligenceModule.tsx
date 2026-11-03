@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { VirtualFile, SemanticAnalysis } from '../types/fileSystem';
 import { analyzeFileContentDNA } from '../utils/groundbreakingEngines';
-import { formatBytes } from '../utils/fileHelpers';
+import { formatBytes, mapAsyncWithConcurrency } from '../utils/fileHelpers';
 
 interface SemanticIntelligenceModuleProps {
   files: VirtualFile[];
@@ -41,12 +41,7 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
     let isCancelled = false;
     async function runAnalysis() {
       setAnalyzing(true);
-      const results: SemanticAnalysis[] = [];
-      for (const f of files) {
-        if (isCancelled) return;
-        const res = await analyzeFileContentDNA(f);
-        results.push(res);
-      }
+      const results = await mapAsyncWithConcurrency(files, 8, analyzeFileContentDNA);
       if (!isCancelled) {
         setAnalyses(results);
         setAnalyzing(false);

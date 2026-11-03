@@ -8,7 +8,12 @@ import {
   TreemapNode,
   FileCategory,
 } from '../types/fileSystem';
-import { formatBytes, getFileExtension, getFileNameWithoutExtension } from './fileHelpers';
+import {
+  formatBytes,
+  getFileExtension,
+  getFileNameWithoutExtension,
+  mapAsyncWithConcurrency,
+} from './fileHelpers';
 
 // -----------------------------------------------------------------
 // 1. FAST CRYPTOGRAPHIC & CONTENT HASH SIMULATION
@@ -46,15 +51,25 @@ export async function computeFileHash(file: VirtualFile): Promise<string> {
 }
 
 export async function detectDuplicates(files: VirtualFile[]): Promise<DuplicateGroup[]> {
-  const hashMap = new Map<string, VirtualFile[]>();
+  const candidatesBySize = new Map<number, VirtualFile[]>();
 
   for (const f of files) {
-    // Files with same size & content signature
-    const hash = await computeFileHash(f);
-    // Group key includes hash and file size
-    const groupKey = `${hash}_${f.size}`;
-    const list = hashMap.get(groupKey) || [];
+    const list = candidatesBySize.get(f.size) || [];
     list.push(f);
+    candidatesBySize.set(f.size, list);
+  }
+
+  const candidates = Array.from(candidatesBySize.values()).filter((list) => list.length > 1);
+  const hashedCandidates = await mapAsyncWithConcurrency(
+    candidates.flat(),
+    8,
+    async (file) => ({ file, hash: await computeFileHash(file) })
+  );
+  const hashMap = new Map<string, VirtualFile[]>();
+  for (const { file, hash } of hashedCandidates) {
+    const groupKey = `${hash}_${file.size}`;
+    const list = hashMap.get(groupKey) || [];
+    list.push(file);
     hashMap.set(groupKey, list);
   }
 

@@ -40,6 +40,7 @@ export const FileTable: React.FC<FileTableProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<FileCategory | 'all'>('all');
   const [previewFile, setPreviewFile] = useState<VirtualFile | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState(200);
 
   const categories: Array<{ id: FileCategory | 'all'; label: string; count: number }> = useMemo(() => {
     const counts: Record<string, number> = { all: files.length };
@@ -61,17 +62,25 @@ export const FileTable: React.FC<FileTableProps> = ({
   }, [files]);
 
   const filteredFiles = useMemo(() => {
+    const normalizedQuery = searchQuery.toLowerCase();
     return files.filter((f) => {
       const matchesSearch =
-        searchQuery === '' ||
-        f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        f.relativePath.toLowerCase().includes(searchQuery.toLowerCase());
+        normalizedQuery === '' ||
+        f.name.toLowerCase().includes(normalizedQuery) ||
+        f.relativePath.toLowerCase().includes(normalizedQuery);
       const matchesCategory = selectedCategory === 'all' || f.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
   }, [files, searchQuery, selectedCategory]);
 
-  const selectedCount = files.filter((f) => f.selected).length;
+  const visibleFiles = useMemo(
+    () => filteredFiles.slice(0, visibleLimit),
+    [filteredFiles, visibleLimit]
+  );
+  const selectedCount = useMemo(
+    () => files.reduce((count, file) => count + Number(file.selected), 0),
+    [files]
+  );
   const allSelected = files.length > 0 && selectedCount === files.length;
   const isIndeterminate = selectedCount > 0 && selectedCount < files.length;
 
@@ -106,7 +115,10 @@ export const FileTable: React.FC<FileTableProps> = ({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setVisibleLimit(200);
+            }}
             placeholder="Search by file name or directory path..."
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-500 text-xs rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:border-cyan-500 transition-colors"
           />
@@ -195,7 +207,10 @@ export const FileTable: React.FC<FileTableProps> = ({
           return (
             <button
               key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
+              onClick={() => {
+                setSelectedCategory(cat.id);
+                setVisibleLimit(200);
+              }}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-slate-800 text-cyan-400 border border-slate-700 shadow-sm'
@@ -238,7 +253,7 @@ export const FileTable: React.FC<FileTableProps> = ({
         </div>
 
         <div className="text-[11px] text-slate-500 font-mono">
-          Showing {filteredFiles.length} of {files.length} items
+          Showing {visibleFiles.length} of {filteredFiles.length} matching items
         </div>
       </div>
 
@@ -256,14 +271,14 @@ export const FileTable: React.FC<FileTableProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 text-xs">
-            {filteredFiles.length === 0 ? (
+            {visibleFiles.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-slate-500">
                   No files match your search filter
                 </td>
               </tr>
             ) : (
-              filteredFiles.map((file) => {
+              visibleFiles.map((file) => {
                 const parentDir = file.relativePath.includes('/')
                   ? file.relativePath.substring(0, file.relativePath.lastIndexOf('/'))
                   : null;
@@ -350,6 +365,17 @@ export const FileTable: React.FC<FileTableProps> = ({
           </tbody>
         </table>
       </div>
+      {visibleFiles.length < filteredFiles.length && (
+        <div className="flex justify-center border-t border-slate-800 p-3">
+          <button
+            type="button"
+            onClick={() => setVisibleLimit((limit) => limit + 200)}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+          >
+            Show 200 more files
+          </button>
+        </div>
+      )}
 
       {/* Metadata Quick Inspector Modal */}
       {previewFile && (

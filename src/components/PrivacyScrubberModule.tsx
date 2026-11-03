@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { VirtualFile, PrivacyInspectionResult } from '../types/fileSystem';
 import { inspectFilePrivacy } from '../utils/groundbreakingEngines';
+import { mapAsyncWithConcurrency } from '../utils/fileHelpers';
 
 interface PrivacyScrubberModuleProps {
   files: VirtualFile[];
@@ -37,12 +38,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
     let cancelled = false;
     async function inspectAll() {
       setInspecting(true);
-      const results: PrivacyInspectionResult[] = [];
-      for (const f of files) {
-        if (cancelled) return;
-        const res = await inspectFilePrivacy(f);
-        results.push(res);
-      }
+      const results = await mapAsyncWithConcurrency(files, 4, inspectFilePrivacy);
       if (!cancelled) {
         setInspections(results);
         setInspecting(false);
