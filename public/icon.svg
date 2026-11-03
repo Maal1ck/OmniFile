@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="folderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="tabGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Folder Back Plate -->
+  <path d="M96 160 C96 142 110 128 128 128 L200 128 C215 128 228 136 236 148 L254 176 L384 176 C402 176 416 190 416 208 L416 260 L96 260 Z" fill="url(#tabGrad)" opacity="0.8" />
+  
+  <!-- Folder Front Body -->
+  <rect x="80" y="200" width="352" height="208" rx="28" fill="url(#folderGrad)" filter="url(#dropShadow)" />
+  
+  <!-- Windows Fluent style decorative inner grid -->
+  <g transform="translate(144, 232)">
+    <!-- Batch Operation Nodes -->
+    <rect x="0" y="0" width="96" height="56" rx="12" fill="#ffffff" fill-opacity="0.18" />
+    <rect x="128" y="0" width="96" height="56" rx="12" fill="#ffffff" fill-opacity="0.18" />
+    <rect x="0" y="72" width="96" height="56" rx="12" fill="#ffffff" fill-opacity="0.18" />
+    <rect x="128" y="72" width="96" height="56" rx="12" fill="#ffffff" fill-opacity="0.18" />
+    
+    <!-- Central Sync / Action Emblem -->
+    <circle cx="112" cy="64" r="34" fill="#0f172a" />
+    <circle cx="112" cy="64" r="30" fill="url(#glowGrad)" />
+    
+    <!-- Sync / Processing arrows -->
+    <path d="M104 56 A12 12 0 0 1 120 54 L120 48 L128 58 L120 68 L120 62 A18 18 0 0 0 98 68 Z" fill="#0f172a" />
+    <path d="M120 72 A12 12 0 0 1 104 74 L104 80 L96 70 L104 60 L104 66 A18 18 0 0 0 126 60 Z" fill="#0f172a" />
+  </g>
+</svg>

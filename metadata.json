@@ -1,0 +1,6 @@
+{
+  "name": "OmniFile Desktop - Batch File Handling & Sync Utility",
+  "description": "Comprehensive Windows desktop file manager for batch renaming, ZIP compression, directory tree flattening, automated format and date sorting, and cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
