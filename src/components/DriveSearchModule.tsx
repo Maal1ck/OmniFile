@@ -28,6 +28,16 @@ import {
   RefreshCw,
   ExternalLink,
   ChevronDown,
+  Copy,
+  CheckSquare,
+  Sparkles,
+  FolderPlus,
+  Info,
+  UploadCloud,
+  Layers,
+  Cpu,
+  HelpCircle,
+  Database,
 } from 'lucide-react';
 import {
   VirtualFile,
@@ -40,12 +50,15 @@ import {
   EVERYTHING_FILTERS,
   EverythingFilterType,
   EverythingSortOption,
+  generateWindowsDriveIndex,
+  crawlDirectoryHandle,
+  parseEFUorCSVList,
 } from '../utils/searchEngine';
 import { formatBytes, formatDate } from '../utils/fileHelpers';
-import { Copy, CheckSquare, Sparkles, FolderPlus } from 'lucide-react';
 
 interface DriveSearchModuleProps {
   files: VirtualFile[];
+  onAddFilesToIndex?: (newFiles: VirtualFile[]) => void;
   onSelectFilesForAction: (selectedIds: string[]) => void;
   onSendToBatchAction: (action: 'rename' | 'compress' | 'organize' | 'flatten') => void;
   onMountDirectoryAsDrive?: () => void;
@@ -60,6 +73,7 @@ interface ContextMenuState {
 
 export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
   files,
+  onAddFilesToIndex,
   onSelectFilesForAction,
   onSendToBatchAction,
   onMountDirectoryAsDrive,
@@ -86,7 +100,14 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
     file: null,
   });
   const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
+  const [isIndexing, setIsIndexing] = useState<boolean>(false);
+  const [indexingStatus, setIndexingStatus] = useState<string>('');
+  const [showArchModal, setShowArchModal] = useState<boolean>(false);
+  const [activeMenu, setActiveMenu] = useState<'file' | 'edit' | 'tools' | 'help' | null>(null);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const directoryInputRef = useRef<HTMLInputElement>(null);
+  const efuInputRef = useRef<HTMLInputElement>(null);
 
   // Query performance timer
   const [queryDurationMs, setQueryDurationMs] = useState<number>(0);
@@ -96,16 +117,19 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
     searchInputRef.current?.focus();
   }, []);
 
-  // Close context menu on outside click
+  // Close context menu and active menu on outside click
   useEffect(() => {
     const handleClickOutside = () => {
       if (contextMenu.isOpen) {
         setContextMenu((prev) => ({ ...prev, isOpen: false }));
       }
+      if (activeMenu) {
+        setActiveMenu(null);
+      }
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
-  }, [contextMenu.isOpen]);
+  }, [contextMenu.isOpen, activeMenu]);
 
   const searchFilters: DeepSearchFilters = useMemo(() => ({
     query: searchQuery,
@@ -212,6 +236,89 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
     }, 2500);
   };
 
+  const handleIndexRealPCDrive = async () => {
+    try {
+      setIsIndexing(true);
+      setIndexingStatus('Select PC drive (e.g. C:\\) or directory...');
+      // @ts-expect-error File System Access API
+      if (typeof window !== 'undefined' && window.showDirectoryPicker) {
+        // @ts-expect-error File System Access API
+        const handle = await window.showDirectoryPicker({
+          id: 'root-pc-drive',
+          mode: 'read',
+        });
+        setIndexingStatus(`Crawling and indexing ${handle.name}...`);
+        const crawled = await crawlDirectoryHandle(handle, (count, item) => {
+          setIndexingStatus(`Indexed ${count} files (${item})`);
+        });
+        if (crawled.length > 0) {
+          onAddFilesToIndex?.(crawled);
+          showCopyToast(`Indexed ${crawled.length} files from ${handle.name}!`);
+        }
+      } else {
+        directoryInputRef.current?.click();
+      }
+    } catch (err: unknown) {
+      if ((err as Error)?.name !== 'AbortError') {
+        directoryInputRef.current?.click();
+      }
+    } finally {
+      setIsIndexing(false);
+      setIndexingStatus('');
+    }
+  };
+
+  const handleLoadWindowsNTFSIndex = () => {
+    const ntfsFiles = generateWindowsDriveIndex();
+    onAddFilesToIndex?.(ntfsFiles);
+    showCopyToast(`Loaded Windows NTFS file table with ${ntfsFiles.length} files across C:, D:, E:!`);
+  };
+
+  const handleImportEFUList = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      const parsed = parseEFUorCSVList(text);
+      if (parsed.length > 0) {
+        onAddFilesToIndex?.(parsed);
+        showCopyToast(`Imported ${parsed.length} files from ${file.name}!`);
+      } else {
+        alert('Could not find file entries in this file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleDirectoryFallbackChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const imported: VirtualFile[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      const relPath = f.webkitRelativePath || f.name;
+      const ext = f.name.split('.').pop()?.toLowerCase() || '';
+      imported.push({
+        id: `dir-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+        name: f.name,
+        relativePath: relPath,
+        size: f.size,
+        type: f.type,
+        extension: ext,
+        lastModified: f.lastModified,
+        category: 'documents',
+        selected: true,
+        content: f,
+        drive: 'C:',
+      });
+    }
+    onAddFilesToIndex?.(imported);
+    showCopyToast(`Indexed ${imported.length} files into Everything!`);
+    e.target.value = '';
+  };
+
   const handleCopyFullPath = (file: VirtualFile) => {
     const driveLetter = file.drive || 'C:';
     const fullPath = `${driveLetter}\\${file.relativePath.replace(/\//g, '\\')}`;
@@ -272,42 +379,292 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-[780px] bg-slate-900 border border-slate-700/80 rounded-lg overflow-hidden shadow-2xl font-sans text-xs select-none">
+    <div className="flex flex-col h-[780px] bg-slate-900 border border-slate-700/80 rounded-lg overflow-hidden shadow-2xl font-sans text-xs select-none relative">
+      {/* Hidden file input for browser folder selection fallback */}
+      <input
+        ref={directoryInputRef}
+        type="file"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+        onChange={handleDirectoryFallbackChange}
+        className="hidden"
+      />
+      {/* Hidden file input for native Voidtools Everything EFU/CSV file list import */}
+      <input
+        ref={efuInputRef}
+        type="file"
+        accept=".efu,.csv,.txt"
+        onChange={handleImportEFUList}
+        className="hidden"
+      />
+
       {/* 1. Classic Windows Menu Bar (File, Edit, View, Search, Bookmarks, Tools, Help) */}
-      <div className="bg-slate-950 px-3 py-1 border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
+      <div className="bg-slate-950 px-3 py-1 border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-300 relative z-20">
         <div className="flex items-center gap-4">
           <span className="font-bold text-white flex items-center gap-1.5">
             <Search className="w-3.5 h-3.5 text-orange-400" />
             <span>Everything</span>
           </span>
-          <div className="flex items-center gap-3 text-slate-400">
-            <button
-              type="button"
-              onClick={onMountDirectoryAsDrive}
-              className="hover:text-cyan-300 cursor-pointer bg-transparent border-0 p-0 text-[11px] font-medium"
-              title="Index local directory or external drive"
-            >
-              File
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectAllResults(selectedFileIds.size !== searchResults.length)}
-              className="hover:text-cyan-300 cursor-pointer bg-transparent border-0 p-0 text-[11px]"
-            >
-              Edit
-            </button>
-            <span className="hover:text-white cursor-pointer">View</span>
-            <span className="hover:text-white cursor-pointer font-medium text-slate-200">Search</span>
+          <div className="flex items-center gap-2 text-slate-400 relative">
+            {/* File Menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveMenu((prev) => (prev === 'file' ? null : 'file'));
+                }}
+                className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                  activeMenu === 'file' ? 'bg-blue-600 text-white' : 'hover:text-cyan-300'
+                }`}
+              >
+                File
+              </button>
+              {activeMenu === 'file' && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute left-0 top-full mt-1 w-64 bg-slate-900 border border-slate-700 rounded shadow-2xl py-1 text-slate-200 z-30 font-sans text-xs animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMenu(null);
+                      handleIndexRealPCDrive();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Index PC Drive (C:\)...</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMenu(null);
+                      handleLoadWindowsNTFSIndex();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Load Windows NTFS Index (Simulated)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMenu(null);
+                      efuInputRef.current?.click();
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Import Everything File List (.efu)...</span>
+                  </button>
+                  {onMountDirectoryAsDrive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveMenu(null);
+                        onMountDirectoryAsDrive();
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer border-t border-slate-800"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Index Specific Folder...</span>
+                    </button>
+                  )}
+                  <div className="border-t border-slate-800 my-1" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMenu(null);
+                      if (onAddFilesToIndex) onAddFilesToIndex([]);
+                      showCopyToast('Cleared index');
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-rose-600 hover:text-white flex items-center gap-2 cursor-pointer text-rose-300"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Clear Search Index</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Edit Menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveMenu((prev) => (prev === 'edit' ? null : 'edit'));
+                }}
+                className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                  activeMenu === 'edit' ? 'bg-blue-600 text-white' : 'hover:text-cyan-300'
+                }`}
+              >
+                Edit
+              </button>
+              {activeMenu === 'edit' && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute left-0 top-full mt-1 w-56 bg-slate-900 border border-slate-700 rounded shadow-2xl py-1 text-slate-200 z-30 font-sans text-xs animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSelectAllResults(true);
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center justify-between cursor-pointer"
+                  >
+                    <span>Select All</span>
+                    <span className="text-[10px] text-slate-400">Ctrl+A</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSelectAllResults(false);
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center justify-between cursor-pointer"
+                  >
+                    <span>Deselect All</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (searchResults.length > 0) {
+                        const text = searchResults
+                          .map((f) => `${f.drive || 'C:'}\\${f.relativePath.replace(/\//g, '\\')}`)
+                          .join('\n');
+                        navigator.clipboard.writeText(text);
+                        showCopyToast(`Copied ${searchResults.length} paths`);
+                      }
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center justify-between cursor-pointer"
+                  >
+                    <span>Copy All Result Paths</span>
+                    <span className="text-[10px] text-slate-400">Ctrl+C</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <span className="px-1.5 py-0.5 hover:text-white cursor-pointer">View</span>
+            <span className="px-1.5 py-0.5 hover:text-white cursor-pointer font-medium text-slate-200">Search</span>
+
+            {/* Bookmarks */}
             <button
               type="button"
               onClick={() => setSearchQuery('size:>10mb')}
-              className="hover:text-cyan-300 cursor-pointer bg-transparent border-0 p-0 text-[11px]"
+              className="px-1.5 py-0.5 hover:text-cyan-300 cursor-pointer bg-transparent border-0 text-[11px]"
               title="Bookmark: Large files >10MB"
             >
               Bookmarks
             </button>
-            <span className="hover:text-white cursor-pointer">Tools</span>
-            <span className="hover:text-white cursor-pointer">Help</span>
+
+            {/* Tools Menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveMenu((prev) => (prev === 'tools' ? null : 'tools'));
+                }}
+                className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                  activeMenu === 'tools' ? 'bg-blue-600 text-white' : 'hover:text-cyan-300'
+                }`}
+              >
+                Tools
+              </button>
+              {activeMenu === 'tools' && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute left-0 top-full mt-1 w-64 bg-slate-900 border border-slate-700 rounded shadow-2xl py-1 text-slate-200 z-30 font-sans text-xs animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowArchModal(true);
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <Info className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>How Everything Indexes All Drives...</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const csvHeader = 'Filename,Size,Date Modified,Drive\r\n';
+                      const csvBody = searchResults
+                        .map(
+                          (f) =>
+                            `"${f.drive || 'C:'}\\${f.relativePath.replace(/\//g, '\\')}",${f.size},"${formatDate(f.lastModified, 'YYYY-MM-DD HH:mm:ss')}",${f.drive || 'C:'}`
+                        )
+                        .join('\r\n');
+                      const blob = new Blob([csvHeader + csvBody], { type: 'text/csv' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `everything-export-${Date.now()}.efu`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      showCopyToast('Exported Everything File List (.efu)');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Export File List (.efu)...</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Help Menu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveMenu((prev) => (prev === 'help' ? null : 'help'));
+                }}
+                className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                  activeMenu === 'help' ? 'bg-blue-600 text-white' : 'hover:text-cyan-300'
+                }`}
+              >
+                Help
+              </button>
+              {activeMenu === 'help' && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute left-0 top-full mt-1 w-72 bg-slate-900 border border-slate-700 rounded shadow-2xl py-1 text-slate-200 z-30 font-sans text-xs animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowArchModal(true);
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Why Everything finds files without folders</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('ext:pdf|docx size:>1mb');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+                    <span>Try Sample Search (ext:pdf|docx size:&gt;1mb)</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -415,8 +772,8 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
         </div>
       </div>
 
-      {/* 3. Action Toolbar (Send selected to Renamer, Zipper, Organizer) */}
-      <div className="bg-slate-950/70 px-3 py-1.5 border-b border-slate-800 flex items-center justify-between text-xs">
+      {/* 3. Action Toolbar (Index Drive, Load NTFS, Import EFU, Architecture Info + Batch Actions) */}
+      <div className="bg-slate-950/70 px-3 py-1.5 border-b border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="text-slate-400 font-mono text-[11px]">
             {searchResults.length.toLocaleString()} objects
@@ -426,16 +783,68 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
           <span className="font-mono text-slate-400 text-[11px] tabular-nums">
             {formatBytes(totalResultsSize)}
           </span>
+          {isIndexing && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-cyan-400 font-mono bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800 animate-pulse">
+              <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
+              <span>{indexingStatus || 'Indexing...'}</span>
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* One-click Load Windows NTFS Index */}
+          <button
+            type="button"
+            onClick={handleLoadWindowsNTFSIndex}
+            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-800/80 rounded transition-colors cursor-pointer"
+            title="Instantly simulate Windows NTFS Master File Table (C:, D:, E:) without picking folders"
+          >
+            <Cpu className="w-3 h-3 text-cyan-400" />
+            <span>Load NTFS Index</span>
+          </button>
+
+          {/* One-click Index Real Drive */}
+          <button
+            type="button"
+            onClick={handleIndexRealPCDrive}
+            disabled={isIndexing}
+            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-800/80 rounded transition-colors cursor-pointer disabled:opacity-50"
+            title="Index real local hard drive C:\ or home directory via File System Access API"
+          >
+            <HardDrive className="w-3 h-3 text-emerald-400" />
+            <span>Index PC Drive (C:\)</span>
+          </button>
+
+          {/* Import .EFU */}
+          <button
+            type="button"
+            onClick={() => efuInputRef.current?.click()}
+            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-amber-300 bg-amber-950/60 hover:bg-amber-900/80 border border-amber-800/80 rounded transition-colors cursor-pointer"
+            title="Import native Voidtools Everything File List (.efu or .csv)"
+          >
+            <UploadCloud className="w-3 h-3 text-amber-400" />
+            <span>Import .EFU</span>
+          </button>
+
+          {/* Architecture Explainer Modal Button */}
+          <button
+            type="button"
+            onClick={() => setShowArchModal(true)}
+            className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer"
+            title="Why does native Everything find files without choosing a folder?"
+          >
+            <HelpCircle className="w-3 h-3 text-cyan-400" />
+            <span>How Everything Works</span>
+          </button>
+
           {onMountDirectoryAsDrive && (
             <button
               type="button"
               onClick={onMountDirectoryAsDrive}
-              className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-800 rounded transition-colors cursor-pointer mr-1"
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer"
+              title="Index a specific custom folder"
             >
-              <FolderPlus className="w-3 h-3 text-cyan-400" />
+              <FolderPlus className="w-3 h-3 text-slate-400" />
               <span>Index Folder</span>
             </button>
           )}
@@ -449,7 +858,7 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                 navigator.clipboard.writeText(text);
                 showCopyToast(`Copied ${selected.length} paths to clipboard`);
               }}
-              className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer mr-1"
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors cursor-pointer ml-1"
               title="Copy paths of selected files (Ctrl+C)"
             >
               <Copy className="w-3 h-3" />
@@ -571,16 +980,98 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
           <tbody className="divide-y divide-slate-900/90 text-slate-300">
             {searchResults.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-16 text-center text-slate-500 font-sans">
+                <td colSpan={7} className="py-12 px-4 text-center font-sans">
                   {files.length === 0 ? (
-                    <div className="space-y-1.5">
-                      <div className="text-slate-400 font-medium">Search index is currently empty (0 files indexed)</div>
-                      <div className="text-[11px] text-slate-500">
-                        Drop files or folders into Workspace, or click <button type="button" onClick={onMountDirectoryAsDrive} className="text-cyan-400 hover:underline cursor-pointer">File &gt; Index Folder</button> to search your PC.
+                    <div className="max-w-2xl mx-auto space-y-4">
+                      <div className="inline-flex p-3 bg-slate-900 border border-slate-700/80 rounded-full shadow-lg">
+                        <Search className="w-7 h-7 text-orange-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-100">
+                          Voidtools Everything Search Engine
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
+                          Ready to search all files across your PC. Choose how you want to index:
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-left pt-1">
+                        {/* 1. Instant NTFS Simulation */}
+                        <div
+                          onClick={handleLoadWindowsNTFSIndex}
+                          className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 hover:border-cyan-500/60 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-1.5 text-cyan-400 font-semibold text-xs mb-1">
+                              <Cpu className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                              <span>1. Load NTFS Index</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              Instantly populates drives (C:\, D:\, E:\) with complete Windows OS, User folders, and Apps to search right now.
+                            </p>
+                          </div>
+                          <span className="inline-block mt-3 text-[10px] font-mono font-medium text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/60 w-fit">
+                            One-Click • Instant
+                          </span>
+                        </div>
+
+                        {/* 2. Direct PC Drive Indexing */}
+                        <div
+                          onClick={handleIndexRealPCDrive}
+                          className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 hover:border-emerald-500/60 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-xs mb-1">
+                              <HardDrive className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                              <span>2. Index PC Drive (C:\)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              Point to your actual hard drive or user home folder. Crawls your local files in real-time with zero cloud uploads.
+                            </p>
+                          </div>
+                          <span className="inline-block mt-3 text-[10px] font-mono font-medium text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60 w-fit">
+                            Direct Drive Access
+                          </span>
+                        </div>
+
+                        {/* 3. Import Everything EFU */}
+                        <div
+                          onClick={() => efuInputRef.current?.click()}
+                          className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 hover:border-amber-500/60 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-xs mb-1">
+                              <UploadCloud className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                              <span>3. Import .EFU List</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              Load an exported Voidtools Everything File List (.efu or .csv) to query 500,000+ PC files in sub-milliseconds.
+                            </p>
+                          </div>
+                          <span className="inline-block mt-3 text-[10px] font-mono font-medium text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60 w-fit">
+                            Voidtools EFU / CSV
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowArchModal(true)}
+                          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Why does native Everything find files automatically without choosing a folder?</span>
+                        </button>
                       </div>
                     </div>
                   ) : (
-                    <div>No files matching query: <code className="text-cyan-400">{searchQuery}</code></div>
+                    <div className="py-8 space-y-2">
+                      <div className="text-slate-300 font-medium">No files matching query: <code className="text-cyan-400 font-mono">{searchQuery}</code></div>
+                      <div className="text-slate-500 text-xs">
+                        Try searching with wildcards like <code className="text-slate-300">*.pdf</code>, <code className="text-slate-300">ext:docx;xlsx</code>, or <code className="text-slate-300">size:&gt;10mb</code>.
+                      </div>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -778,6 +1269,101 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
         <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-cyan-500/50 text-cyan-200 text-xs px-3.5 py-1.5 rounded-md shadow-2xl font-mono flex items-center gap-2 animate-fade-in">
           <Copy className="w-3.5 h-3.5 text-cyan-400" />
           <span>{clipboardNotice}</span>
+        </div>
+      )}
+
+      {/* 8. Architecture Explainer Modal: Voidtools Everything NTFS vs Web Sandbox */}
+      {showArchModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowArchModal(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-2xl w-full p-6 text-slate-200 font-sans space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-orange-950/60 border border-orange-700/60 rounded-lg text-orange-400">
+                  <Search className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    How Voidtools Everything Indexes All Files
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Understanding the NTFS Master File Table, USN Journal, and Web Sandbox
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowArchModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs leading-relaxed">
+              {/* Pillar 1 */}
+              <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-1.5">
+                <div className="flex items-center gap-2 text-cyan-400 font-semibold text-xs">
+                  <Cpu className="w-4 h-4" />
+                  <span>1. Why Native Voidtools Everything Never Asks for Folders</span>
+                </div>
+                <p className="text-slate-300">
+                  When you run native <code className="text-orange-300 bg-slate-900 px-1 py-0.5 rounded">Everything.exe</code> on Windows, it runs an elevated background Windows Service. Instead of traversing folders file-by-file through the Windows Shell API, it bypasses folder scanning entirely and reads the raw NTFS <strong className="text-white">$MFT (Master File Table)</strong> and <strong className="text-white">USN Change Journal</strong> directly from disk blocks in 1–2 seconds.
+                </p>
+              </div>
+
+              {/* Pillar 2 */}
+              <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-1.5">
+                <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs">
+                  <Info className="w-4 h-4" />
+                  <span>2. Why Web Browsers Require Permission</span>
+                </div>
+                <p className="text-slate-300">
+                  Modern browsers (Chrome, Edge, Firefox) run in a strict security sandbox. To protect user privacy and prevent unauthorized malware access, web standards strictly forbid websites from silently accessing your raw hard drive without an explicit prompt.
+                </p>
+              </div>
+
+              {/* Pillar 3 */}
+              <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
+                  <Sparkles className="w-4 h-4" />
+                  <span>3. How OmniFile Gives You the Everything Experience:</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-slate-300 pl-1">
+                  <li>
+                    <strong className="text-white">Instant NTFS Index:</strong> Click <button type="button" onClick={() => { setShowArchModal(false); handleLoadWindowsNTFSIndex(); }} className="text-cyan-400 underline font-semibold hover:text-cyan-300">Load NTFS Index</button> to immediately populate C:, D:, E: drive records with Windows OS & user files with zero setup.
+                  </li>
+                  <li>
+                    <strong className="text-white">Direct PC Drive Indexing:</strong> Click <button type="button" onClick={() => { setShowArchModal(false); handleIndexRealPCDrive(); }} className="text-emerald-400 underline font-semibold hover:text-emerald-300">Index PC Drive (C:\)</button> to grant one-time access to your actual hard drive or user folder.
+                  </li>
+                  <li>
+                    <strong className="text-white">Everything File List (.EFU):</strong> Export an EFU list in native Voidtools Everything and import it here to query 500,000+ files in sub-milliseconds.
+                  </li>
+                  <li>
+                    <strong className="text-white">Windows .exe Packager:</strong> Want true silent root NTFS access? Open the <span className="text-cyan-300 font-semibold">Windows .exe Packager</span> in the top header to build OmniFile as a native Windows desktop app using Electron/Tauri with C++ disk access.
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <span className="text-[11px] text-slate-400">
+                Voidtools Everything Engine replica for OmniFile
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowArchModal(false)}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded transition-colors cursor-pointer"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

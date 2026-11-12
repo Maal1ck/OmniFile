@@ -69,13 +69,17 @@ export default function App() {
 
   // File Handlers
   const handleFilesAdded = useCallback((newFiles: VirtualFile[]) => {
+    if (newFiles.length === 0) {
+      setFiles([]);
+      return;
+    }
     setFiles((prev) => {
       // Append unique files
       const existingIds = new Set(prev.map((f) => f.id));
       const fresh = newFiles.filter((f) => !existingIds.has(f.id));
       return [...fresh, ...prev];
     });
-    showToast(`Added ${newFiles.length} new files to workspace.`);
+    showToast(`Added ${newFiles.length} files to index.`);
   }, [showToast]);
 
   const handleToggleSelect = useCallback((id: string) => {
@@ -320,6 +324,7 @@ export default function App() {
         {activeTab === 'search' && (
           <DriveSearchModule
             files={files}
+            onAddFilesToIndex={handleFilesAdded}
             onSelectFilesForAction={(selectedIds) => {
               const idSet = new Set(selectedIds);
               setFiles((prev) =>
@@ -332,10 +337,6 @@ export default function App() {
             }}
             onSendToBatchAction={(action) => {
               setActiveTab(action);
-            }}
-            onMountDirectoryAsDrive={() => {
-              setActiveTab('workspace');
-              showToast('Select a folder to index new storage volume.');
             }}
           />
         )}
