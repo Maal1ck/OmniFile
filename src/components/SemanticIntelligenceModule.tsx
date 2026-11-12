@@ -210,7 +210,16 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {filteredAnalyses.map((sem) => {
+              {filteredAnalyses.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-slate-500 font-sans">
+                    {analyzing
+                      ? 'Analyzing workspace file contents...'
+                      : 'No files in workspace. Add documents, media, or code in Workspace tab to extract File DNA.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredAnalyses.map((sem) => {
                 const originalFile = files.find((f) => f.id === sem.fileId);
                 if (!originalFile) return null;
 
@@ -277,7 +286,7 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

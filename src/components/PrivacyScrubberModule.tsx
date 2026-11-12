@@ -195,7 +195,14 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {inspections.map((ins) => {
+              {inspections.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
+                    {inspecting ? 'Inspecting files for privacy exposures...' : 'No files in workspace to inspect.'}
+                  </td>
+                </tr>
+              ) : (
+                inspections.map((ins) => {
                 const hasIssues = ins.hasExifLocation || ins.detectedSecrets.length > 0 || ins.cleanableMetadata.length > 0;
 
                 return (
@@ -271,7 +278,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

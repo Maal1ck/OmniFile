@@ -271,7 +271,17 @@ export const FileTable: React.FC<FileTableProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 text-xs">
-            {visibleFiles.length === 0 ? (
+            {files.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-16 text-center text-slate-500">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <File className="w-8 h-8 text-slate-600 stroke-[1.5]" />
+                    <span className="text-sm font-medium text-slate-400">Workspace is empty</span>
+                    <span className="text-xs text-slate-500">Select or drop your files and folders above to begin processing</span>
+                  </div>
+                </td>
+              </tr>
+            ) : visibleFiles.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-slate-500">
                   No files match your search filter

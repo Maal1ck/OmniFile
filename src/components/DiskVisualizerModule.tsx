@@ -197,15 +197,20 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {activeDirectory.children?.map((child) => {
-              const isFolder = !!(child.children && child.children.length > 0);
-              const parentSize = activeDirectory.size || 1;
-              const ratio = Math.round((child.size / parentSize) * 100);
+            {(!activeDirectory.children || activeDirectory.children.length === 0) ? (
+              <div className="col-span-full py-12 text-center text-slate-500 font-sans">
+                No files loaded in workspace. Add files in Workspace tab to view the disk heatmap.
+              </div>
+            ) : (
+              activeDirectory.children.map((child) => {
+                const isFolder = !!(child.children && child.children.length > 0);
+                const parentSize = activeDirectory.size || 1;
+                const ratio = Math.round((child.size / parentSize) * 100);
 
-              return (
-                <div
-                  key={child.path}
-                  onClick={() => handleDrillDown(child)}
+                return (
+                  <div
+                    key={child.path}
+                    onClick={() => handleDrillDown(child)}
                   className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
                     isFolder
                       ? 'bg-slate-950/80 border-slate-800 hover:border-emerald-500 hover:bg-slate-850'
@@ -244,7 +249,7 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
                   </div>
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
 

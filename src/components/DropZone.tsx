@@ -3,7 +3,6 @@ import {
   UploadCloud,
   FolderOpen,
   FilePlus,
-  Sparkles,
   ShieldCheck,
   HardDrive,
 } from 'lucide-react';
@@ -11,7 +10,6 @@ import { VirtualFile } from '../types/fileSystem';
 import {
   readFilesFromDataTransfer,
   parseFileList,
-  generateSampleFiles,
   getFileExtension,
   classifyFileCategory,
 } from '../utils/fileHelpers';
@@ -202,22 +200,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
     folderInputRef.current?.click();
   };
 
-  const handleLoadSampleDataset = () => {
-    if (onStartProgress) {
-      onStartProgress('Generating Sample Workspace Dataset...');
-      onUpdateProgress?.(20, 'Creating financial invoices...');
-    }
-    setTimeout(() => {
-      onUpdateProgress?.(60, 'Synthesizing media, source code & archives...');
-      const samples = generateSampleFiles();
-      setTimeout(() => {
-        onUpdateProgress?.(100, 'Populating workspace...');
-        onFilesAdded(samples);
-        if (onFinishProgress) onFinishProgress();
-      }, 250);
-    }, 200);
-  };
-
   return (
     <div
       onDragOver={handleDragOver}
@@ -287,15 +269,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
           >
             <FilePlus className="w-4 h-4 text-slate-400" />
             <span>Select Files</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleLoadSampleDataset}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-800/80 rounded-lg transition-colors cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4 text-cyan-400" />
-            <span>Load Sample Workspace (20 Files)</span>
           </button>
         </div>
 

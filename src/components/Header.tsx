@@ -54,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navItems: Array<{ id: ActiveTab; label: string; icon: React.ElementType; badge?: string }> = [
     { id: 'workspace', label: 'Workspace', icon: Layers },
-    { id: 'search', label: 'Drive Search', icon: Search, badge: 'PC' },
+    { id: 'search', label: 'Everything Search', icon: Search, badge: 'Voidtools' },
     { id: 'semantic', label: 'File DNA', icon: BrainCircuit, badge: 'AI' },
     { id: 'dedup', label: 'Duplicates', icon: CopyCheck },
     { id: 'privacy', label: 'Privacy Guard', icon: ShieldAlert },

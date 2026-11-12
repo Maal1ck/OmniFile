@@ -464,13 +464,20 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {previewResults.map((item, idx) => (
-                <tr
-                  key={idx}
-                  className={`hover:bg-slate-800/30 transition-colors ${
-                    item.isModified ? 'bg-cyan-950/10' : ''
-                  }`}
-                >
+              {previewResults.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
+                    No files loaded in workspace. Add files in Workspace tab to preview batch renames.
+                  </td>
+                </tr>
+              ) : (
+                previewResults.map((item, idx) => (
+                  <tr
+                    key={idx}
+                    className={`hover:bg-slate-800/30 transition-colors ${
+                      item.isModified ? 'bg-cyan-950/10' : ''
+                    }`}
+                  >
                   <td className="py-2.5 px-4 font-mono text-slate-400 truncate max-w-xs">
                     {item.originalPath}
                   </td>
@@ -492,7 +499,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                     )}
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>

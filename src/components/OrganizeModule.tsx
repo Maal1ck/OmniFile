@@ -529,8 +529,15 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {previewResults.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+              {previewResults.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
+                    No files in workspace. Add files or folders in Workspace tab to preview automatic folder organization.
+                  </td>
+                </tr>
+              ) : (
+                previewResults.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
                   <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
                     {item.originalPath}
                   </td>
@@ -552,7 +559,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
                     )}
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>

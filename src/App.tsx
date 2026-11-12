@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { VirtualFile } from './types/fileSystem';
 import {
-  generateSampleFiles,
   formatBytes,
   createZipArchive,
   triggerFileDownload,
@@ -38,13 +37,10 @@ import { WindowsPackagingModal } from './components/WindowsPackagingModal';
 import { ExecutionModal } from './components/ExecutionModal';
 
 export default function App() {
-  // Pre-load realistic sample dataset so the user can immediately test all features
-  const [files, setFiles] = useState<VirtualFile[]>(() => generateSampleFiles());
+  const [files, setFiles] = useState<VirtualFile[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('workspace');
   const [isWindowsPackagerOpen, setIsWindowsPackagerOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(
-    'Workspace loaded with 20 sample files. Test Batch Renaming, Compression, Flattening, or Sorter!'
-  );
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Execution Progress Modal State
   const [progressState, setProgressState] = useState({
@@ -109,11 +105,12 @@ export default function App() {
   }, [showToast]);
 
   const handleResetWorkspace = useCallback(() => {
-    if (window.confirm('Reset workspace and reload fresh sample files?')) {
-      setFiles(generateSampleFiles());
-      showToast('Workspace reset to default sample files.');
+    if (files.length === 0) return;
+    if (window.confirm('Clear all files in workspace?')) {
+      setFiles([]);
+      showToast('Workspace cleared.');
     }
-  }, [showToast]);
+  }, [files.length, showToast]);
 
   const handleApplyRenames = useCallback((updated: VirtualFile[]) => {
     setFiles(updated);

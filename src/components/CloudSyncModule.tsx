@@ -40,26 +40,26 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
     {
       provider: 'google_drive',
       name: 'Google Drive',
-      connected: true,
-      accountEmail: 'user.desktop@gmail.com',
+      connected: false,
+      accountEmail: undefined,
       targetRemoteFolder: 'My Drive/OmniFile_Sync',
       syncMode: 'two_way',
       conflictStrategy: 'local_priority',
       autoSyncInterval: '1h',
-      storageUsedBytes: 48500000000, // 48.5 GB
+      storageUsedBytes: 0,
       storageTotalBytes: 107374182400, // 100 GB
-      lastSyncTime: Date.now() - 3600000 * 2, // 2 hours ago
+      lastSyncTime: undefined,
     },
     {
       provider: 'onedrive',
       name: 'Microsoft OneDrive',
       connected: false,
-      accountEmail: 'work.enterprise@outlook.com',
-      targetRemoteFolder: 'OneDrive - Enterprise/OmniFile_Vault',
+      accountEmail: undefined,
+      targetRemoteFolder: 'OneDrive/OmniFile_Vault',
       syncMode: 'upload_backup',
       conflictStrategy: 'keep_both',
       autoSyncInterval: 'daily',
-      storageUsedBytes: 124000000000,
+      storageUsedBytes: 0,
       storageTotalBytes: 1099511627776, // 1 TB
       lastSyncTime: undefined,
     },
@@ -72,7 +72,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
       syncMode: 'upload_backup',
       conflictStrategy: 'cloud_priority',
       autoSyncInterval: 'manual',
-      storageUsedBytes: 1200000000,
+      storageUsedBytes: 0,
       storageTotalBytes: 21474836480, // 20 GB
       lastSyncTime: undefined,
     },
@@ -80,35 +80,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
 
   const [activeProvider, setActiveProvider] = useState<CloudProvider>('google_drive');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([
-    {
-      id: 'log-1',
-      timestamp: Date.now() - 3600000 * 2,
-      provider: 'google_drive',
-      action: 'synced',
-      fileName: 'Accounting/Invoices/Pending/Invoice_ACME_Corp_0089.pdf',
-      status: 'success',
-      details: 'Transferred 421 KB with MD5 checksum verification.',
-    },
-    {
-      id: 'log-2',
-      timestamp: Date.now() - 3600000 * 2.1,
-      provider: 'google_drive',
-      action: 'uploaded',
-      fileName: 'Q3_Financial_Statement_Final.xlsx',
-      status: 'success',
-      details: 'Uploaded updated revision (142 KB).',
-    },
-    {
-      id: 'log-3',
-      timestamp: Date.now() - 3600000 * 24,
-      provider: 'google_drive',
-      action: 'conflict_resolved',
-      fileName: 'client_consulting_agreement_v2.docx',
-      status: 'warning',
-      details: 'Local modification was newer; updated cloud copy.',
-    },
-  ]);
+  const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
 
   const currentAccount = accounts.find((a) => a.provider === activeProvider)!;
 
@@ -438,32 +410,40 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
-              {syncLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-slate-800/20">
-                  <td className="py-2 px-4 text-slate-500 text-[11px] tabular-nums">
-                    {formatDate(log.timestamp, 'YYYY-MM-DD HH:mm')}
-                  </td>
-                  <td className="py-2 px-4">
-                    <span
-                      className={`text-[11px] uppercase font-semibold ${
-                        log.action === 'uploaded'
-                          ? 'text-cyan-400'
-                          : log.action === 'synced'
-                          ? 'text-emerald-400'
-                          : 'text-amber-400'
-                      }`}
-                    >
-                      {log.action}
-                    </span>
-                  </td>
-                  <td className="py-2 px-4 truncate max-w-xs text-slate-200 font-sans">
-                    {log.fileName}
-                  </td>
-                  <td className="py-2 px-4 text-slate-400 font-sans text-[11px]">
-                    {log.details}
+              {syncLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-slate-500 font-sans">
+                    No sync events recorded yet. Connect an account and trigger a sync to audit operations.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                syncLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-800/20">
+                    <td className="py-2 px-4 text-slate-500 text-[11px] tabular-nums">
+                      {formatDate(log.timestamp, 'YYYY-MM-DD HH:mm')}
+                    </td>
+                    <td className="py-2 px-4">
+                      <span
+                        className={`text-[11px] uppercase font-semibold ${
+                          log.action === 'uploaded'
+                            ? 'text-cyan-400'
+                            : log.action === 'synced'
+                            ? 'text-emerald-400'
+                            : 'text-amber-400'
+                        }`}
+                      >
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="py-2 px-4 truncate max-w-xs text-slate-200 font-sans">
+                      {log.fileName}
+                    </td>
+                    <td className="py-2 px-4 text-slate-400 font-sans text-[11px]">
+                      {log.details}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

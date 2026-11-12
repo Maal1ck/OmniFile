@@ -12,6 +12,34 @@ export const EXCEL_FILE_EXTENSIONS = new Set([
   'xls', 'xlsx', 'xlsm', 'xlsb', 'xlt', 'xltx', 'xltm', 'xlam', 'xla', 'xlw',
 ]);
 
+/**
+ * Concurrently maps an array of items with a worker pool of given concurrency limit
+ */
+export async function mapAsyncWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex++;
+      results[currentIndex] = await fn(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < workerCount; i++) {
+    workers.push(worker());
+  }
+
+  await Promise.all(workers);
+  return results;
+}
+
 export function getFileExtension(filename: string): string {
   const parts = filename.split('.');
   return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
@@ -91,185 +119,6 @@ export function formatDate(timestamp: number, formatPattern: string = 'YYYY-MM-D
     default:
       return `${year}-${month}-${day} ${hours}:${minutes}`;
   }
-}
-
-// Generate realistic sample project files for instant user experimentation
-export function generateSampleFiles(): VirtualFile[] {
-  const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  const samples: Array<{
-    name: string;
-    relativePath: string;
-    size: number;
-    daysAgo: number;
-    sampleContent: string;
-  }> = [
-    {
-      name: 'Q3_Financial_Statement_Final.xlsx',
-      relativePath: 'Accounting/2025/Q3/Q3_Financial_Statement_Final.xlsx',
-      size: 142500,
-      daysAgo: 45,
-      sampleContent: 'Date,Category,Amount\n2025-07-01,Revenue,45000\n2025-08-01,Revenue,52000',
-    },
-    {
-      name: 'Invoice_ACME_Corp_0089.pdf',
-      relativePath: 'Accounting/Invoices/Pending/Invoice_ACME_Corp_0089.pdf',
-      size: 421000,
-      daysAgo: 12,
-      sampleContent: '%PDF-1.4 Invoice #0089 ACME Corp Total: $4,200.00 Due: Net 30',
-    },
-    {
-      name: 'Invoice_GlobalTech_0090.pdf',
-      relativePath: 'Accounting/Invoices/Paid/Invoice_GlobalTech_0090.pdf',
-      size: 389000,
-      daysAgo: 25,
-      sampleContent: '%PDF-1.4 Invoice #0090 GlobalTech Total: $12,500.00 Paid: 2025-09-15',
-    },
-    {
-      name: 'Expense_Receipt_Hotel_Stay.pdf',
-      relativePath: 'Travel/Receipts/2025/Expense_Receipt_Hotel_Stay.pdf',
-      size: 215000,
-      daysAgo: 8,
-      sampleContent: '%PDF-1.4 Grand Hyatt Seattle Room charges 2 nights $540.00',
-    },
-    {
-      name: 'product_showcase_hero.png',
-      relativePath: 'Marketing/Assets/Raw_Visuals/product_showcase_hero.png',
-      size: 1845000,
-      daysAgo: 18,
-      sampleContent: 'PNG_IMAGE_SAMPLE_STREAM',
-    },
-    {
-      name: 'product_showcase_hero.png', // duplicate name in different folder to test collisions!
-      relativePath: 'Design_Archive/V1/product_showcase_hero.png',
-      size: 1520000,
-      daysAgo: 95,
-      sampleContent: 'PNG_IMAGE_SAMPLE_STREAM_V1',
-    },
-    {
-      name: 'social_banner_twitter.jpg',
-      relativePath: 'Marketing/Social/social_banner_twitter.jpg',
-      size: 780000,
-      daysAgo: 5,
-      sampleContent: 'JPEG_IMAGE_DATA_SAMPLE',
-    },
-    {
-      name: 'quarterly_all_hands_deck.pptx',
-      relativePath: 'Executive/Presentations/quarterly_all_hands_deck.pptx',
-      size: 4500000,
-      daysAgo: 30,
-      sampleContent: 'PPTX_PRESENTATION_STREAM_SLIDES',
-    },
-    {
-      name: 'client_consulting_agreement_v2.docx',
-      relativePath: 'Legal/Contracts/Active/client_consulting_agreement_v2.docx',
-      size: 124000,
-      daysAgo: 70,
-      sampleContent: 'Standard Consulting Services Agreement Terms and Conditions 2025',
-    },
-    {
-      name: 'non_disclosure_agreement_signed.pdf',
-      relativePath: 'Legal/NDAs/non_disclosure_agreement_signed.pdf',
-      size: 260000,
-      daysAgo: 140,
-      sampleContent: '%PDF-1.4 Mutual Non-Disclosure Agreement Signed Copy',
-    },
-    {
-      name: 'podcast_episode_14_master.mp3',
-      relativePath: 'Media/Audio/Podcasts/podcast_episode_14_master.mp3',
-      size: 15800000,
-      daysAgo: 14,
-      sampleContent: 'ID3_AUDIO_STREAM_PODCAST_MASTER',
-    },
-    {
-      name: 'voiceover_intro_clean.wav',
-      relativePath: 'Media/Audio/Raw_Takes/voiceover_intro_clean.wav',
-      size: 8900000,
-      daysAgo: 3,
-      sampleContent: 'RIFF_WAVE_AUDIO_SAMPLE',
-    },
-    {
-      name: 'product_demo_screencast.mp4',
-      relativePath: 'Media/Video/Tutorials/product_demo_screencast.mp4',
-      size: 48200000,
-      daysAgo: 22,
-      sampleContent: 'MP4_CONTAINER_VIDEO_STREAM',
-    },
-    {
-      name: 'server_database_backup.sql',
-      relativePath: 'DevOps/Backups/Weekly/server_database_backup.sql',
-      size: 6700000,
-      daysAgo: 7,
-      sampleContent: '-- PostgreSQL Database Dump\nCREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT);',
-    },
-    {
-      name: 'app_config_production.json',
-      relativePath: 'DevOps/Config/app_config_production.json',
-      size: 8400,
-      daysAgo: 2,
-      sampleContent: '{\n  "environment": "production",\n  "port": 3000,\n  "cache": true\n}',
-    },
-    {
-      name: 'api_routes_handler.ts',
-      relativePath: 'Source/Backend/api_routes_handler.ts',
-      size: 16500,
-      daysAgo: 4,
-      sampleContent: 'export async function handleRequest(req: Request) {\n  return new Response("OK");\n}',
-    },
-    {
-      name: 'customer_leads_export_2025.csv',
-      relativePath: 'Sales/Exports/customer_leads_export_2025.csv',
-      size: 340000,
-      daysAgo: 11,
-      sampleContent: 'id,first_name,last_name,email,company\n1,Alice,Smith,alice@example.com,Apex\n2,Bob,Miller,bob@example.com,Nexus',
-    },
-    {
-      name: 'project_assets_archive.zip',
-      relativePath: 'Archives/Old_Projects/project_assets_archive.zip',
-      size: 12500000,
-      daysAgo: 180,
-      sampleContent: 'PK_ZIP_ARCHIVE_MOCK_CONTENT',
-    },
-    {
-      name: 'production_error_audit.log',
-      relativePath: 'System/Logs/production_error_audit.log',
-      size: 890000,
-      daysAgo: 1,
-      sampleContent: '[2025-10-12 14:22:01] INFO Server boot complete\n[2025-10-12 14:25:30] WARN Memory threshold 75%',
-    },
-    {
-      name: 'software_architecture_notes.md',
-      relativePath: 'Notes/Tech/software_architecture_notes.md',
-      size: 12000,
-      daysAgo: 15,
-      sampleContent: '# Architecture Overview\n- Client-first file pipeline\n- Real-time batch renaming\n- Zero latency preview',
-    },
-  ];
-
-  return samples.map((s, index) => {
-    const ext = getFileExtension(s.name);
-    const category = classifyFileCategory(ext);
-    const lastModified = now - s.daysAgo * dayMs;
-    const blob = new Blob([s.sampleContent], { type: 'text/plain' });
-
-    // Distribute sample files realistically across drive volumes: C: (OS/Apps/Desktop), D: (Data/Projects), E: (Removable USB/Backups)
-    const driveAssignment = index < 9 ? 'C:' : index < 16 ? 'D:' : 'E:';
-
-    return {
-      id: `sample-${index}-${Date.now()}`,
-      name: s.name,
-      relativePath: s.relativePath,
-      size: s.size,
-      type: blob.type,
-      extension: ext,
-      lastModified,
-      category,
-      selected: true,
-      content: blob,
-      drive: driveAssignment,
-    };
-  });
 }
 
 // Case conversion helpers
