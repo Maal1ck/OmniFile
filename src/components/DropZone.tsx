@@ -12,6 +12,8 @@ import {
   readFilesFromDataTransfer,
   parseFileList,
   generateSampleFiles,
+  getFileExtension,
+  classifyFileCategory,
 } from '../utils/fileHelpers';
 
 interface DropZoneProps {
@@ -65,20 +67,12 @@ export const DropZone: React.FC<DropZoneProps> = ({
         );
         if (extracted.length > 0) {
           onFilesAdded(extracted);
-        } else if (e.dataTransfer.files.length > 0) {
-          const parsed = await parseFileList(
-            e.dataTransfer.files,
-            (percent, currentItem, count, total) => {
-              onUpdateProgress?.(percent, `${currentItem} (${count}/${total} files)`);
-            }
-          );
-          if (parsed.length > 0) onFilesAdded(parsed);
         }
       } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        const parsed = await parseFileList(
+        const parsed = parseFileList(
           e.dataTransfer.files,
-          (percent, currentItem, count, total) => {
-            onUpdateProgress?.(percent, `${currentItem} (${count}/${total} files)`);
+          (percent, currentItem, count) => {
+            onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
           }
         );
         if (parsed.length > 0) {
@@ -92,26 +86,119 @@ export const DropZone: React.FC<DropZoneProps> = ({
     }
   };
 
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
-    onStartProgress?.('Ingesting Selected Files...');
-    try {
-      const parsed = await parseFileList(
-        fileList,
-        (percent, currentItem, count, total) => {
-          onUpdateProgress?.(percent, `${currentItem} (${count}/${total} files)`);
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      if (onStartProgress) {
+        onStartProgress('Ingesting Selected Files...');
+      }
+      const parsed = parseFileList(
+        e.target.files,
+        (percent, currentItem, count) => {
+          onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
         }
       );
       onFilesAdded(parsed);
-    } finally {
       e.target.value = '';
-      onFinishProgress?.();
+      if (onFinishProgress) {
+        onFinishProgress();
+      }
     }
   };
 
-  const handleOpenFolderNative = () => {
+  const handleOpenFolderNative = async () => {
+    // Check if Chromium / Windows Native Directory Picker is available
+    if ('showDirectoryPicker' in window) {
+      try {
+        const dirHandle = await (window as unknown as {
+          showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+        }).showDirectoryPicker();
+
+        if (onStartProgress) {
+          onStartProgress(`Ingesting Directory: ${dirHandle.name}...`);
+        }
+
+        const gatheredFiles: VirtualFile[] = [];
+        let count = 0;
+        let lastReport = 0;
+
+        // Fast parallel directory entry processor
+        const processHandleQueue = async (
+          handles: { handle: FileSystemDirectoryHandle; path: string }[]
+        ) => {
+          while (handles.length > 0) {
+            const current = handles.shift();
+            if (!current) break;
+
+            const subHandles: { handle: FileSystemDirectoryHandle; path: string }[] = [];
+            const filePromises: Promise<void>[] = [];
+
+            for await (const entry of (current.handle as any).values()) {
+              if (entry.kind === 'file') {
+                const fileHandle = entry as unknown as FileSystemFileHandle;
+                filePromises.push(
+                  fileHandle.getFile().then((file) => {
+                    count++;
+                    const now = performance.now();
+                    if (now - lastReport > 60) {
+                      lastReport = now;
+                      onUpdateProgress?.(
+                        Math.min(98, Math.round((count / (count + 10)) * 100)),
+                        `${file.name} (${count} files indexed)`
+                      );
+                    }
+                    const relativePath = current.path ? `${current.path}/${file.name}` : file.name;
+                    const ext = getFileExtension(file.name);
+                    const driveMatch = relativePath.match(/^([A-Za-z]:)/);
+                    const drive = driveMatch ? driveMatch[1].toUpperCase() : 'C:';
+
+                    gatheredFiles.push({
+                      id: `native-${Date.now()}-${count}-${Math.random().toString(36).slice(2, 6)}`,
+                      name: file.name,
+                      relativePath,
+                      size: file.size,
+                      type: file.type,
+                      extension: ext,
+                      lastModified: file.lastModified,
+                      category: classifyFileCategory(ext),
+                      selected: true,
+                      content: file,
+                      drive,
+                    });
+                  })
+                );
+              } else if (entry.kind === 'directory') {
+                const subDirHandle = entry as unknown as FileSystemDirectoryHandle;
+                const newPath = current.path ? `${current.path}/${entry.name}` : entry.name;
+                subHandles.push({ handle: subDirHandle, path: newPath });
+              }
+            }
+
+            await Promise.all(filePromises);
+            for (const sub of subHandles) {
+              handles.push(sub);
+            }
+          }
+        };
+
+        await processHandleQueue([{ handle: dirHandle, path: dirHandle.name }]);
+        if (gatheredFiles.length > 0) {
+          onFilesAdded(gatheredFiles);
+        }
+        if (onFinishProgress) {
+          onFinishProgress();
+        }
+        return;
+      } catch (err) {
+        // User canceled or denied permission, fall back to input
+        if (onFinishProgress) onFinishProgress();
+        if ((err as Error).name !== 'AbortError') {
+          folderInputRef.current?.click();
+        }
+        return;
+      }
+    }
+
+    // Standard fallback
     folderInputRef.current?.click();
   };
 

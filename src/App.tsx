@@ -12,6 +12,7 @@ import {
   Download,
   Command,
   Sparkles,
+  HardDrive,
 } from 'lucide-react';
 import { VirtualFile } from './types/fileSystem';
 import {
@@ -32,6 +33,7 @@ import { SemanticIntelligenceModule } from './components/SemanticIntelligenceMod
 import { DeduplicationModule } from './components/DeduplicationModule';
 import { PrivacyScrubberModule } from './components/PrivacyScrubberModule';
 import { DiskVisualizerModule } from './components/DiskVisualizerModule';
+import { DriveSearchModule } from './components/DriveSearchModule';
 import { WindowsPackagingModal } from './components/WindowsPackagingModal';
 import { ExecutionModal } from './components/ExecutionModal';
 
@@ -240,6 +242,15 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
+                onClick={() => setActiveTab('search')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-300 bg-sky-950/70 hover:bg-sky-900/60 border border-sky-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-sky-400" />
+                <span>Search PC & Drives</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('semantic')}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/70 hover:bg-cyan-900/60 border border-cyan-800 rounded-lg transition-colors cursor-pointer"
               >
@@ -306,6 +317,30 @@ export default function App() {
               onQuickAction={(action) => setActiveTab(action)}
             />
           </div>
+        )}
+
+        {/* Tab: PC & Connected Drive Search Engine */}
+        {activeTab === 'search' && (
+          <DriveSearchModule
+            files={files}
+            onSelectFilesForAction={(selectedIds) => {
+              const idSet = new Set(selectedIds);
+              setFiles((prev) =>
+                prev.map((f) => ({
+                  ...f,
+                  selected: idSet.has(f.id),
+                }))
+              );
+              showToast(`Selected ${selectedIds.length} matched files for batch action.`);
+            }}
+            onSendToBatchAction={(action) => {
+              setActiveTab(action);
+            }}
+            onMountDirectoryAsDrive={() => {
+              setActiveTab('workspace');
+              showToast('Select a folder to index new storage volume.');
+            }}
+          />
         )}
 
         {/* Tab 2: Semantic Content Intelligence & DNA */}

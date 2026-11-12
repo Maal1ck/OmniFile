@@ -22,6 +22,34 @@ export interface VirtualFile {
   category: FileCategory;
   selected?: boolean;
   content?: Blob | ArrayBuffer | string;
+  drive?: string; // e.g. "C:", "D:", "E: (USB External)", "Google Drive"
+}
+
+export interface DriveInfo {
+  id: string;
+  name: string; // e.g. "Local Disk (C:)", "Data & Projects (D:)", "External USB (E:)"
+  letter: string; // "C:", "D:", "E:"
+  type: 'local' | 'removable' | 'network' | 'cloud';
+  totalSpace: number;
+  usedSpace: number;
+  fileCount: number;
+  isMounted: boolean;
+  color: string;
+}
+
+export interface DeepSearchFilters {
+  query: string;
+  selectedDrives: string[]; // ['C:', 'D:', 'ALL']
+  selectedExtensions: string[];
+  selectedCategories: FileCategory[];
+  minSize: number; // in bytes (0 = no limit)
+  maxSize: number; // in bytes (0 = no limit)
+  dateRange: 'all' | 'today' | 'week' | 'month' | 'year' | 'custom';
+  customStartDate?: number;
+  customEndDate?: number;
+  matchCase: boolean;
+  useRegex: boolean;
+  contentSearchText?: string;
 }
 
 export type RenameMode = 'template' | 'replace' | 'prefix_suffix' | 'case' | 'numbering' | 'date';

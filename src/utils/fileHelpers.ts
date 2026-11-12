@@ -253,6 +253,9 @@ export function generateSampleFiles(): VirtualFile[] {
     const lastModified = now - s.daysAgo * dayMs;
     const blob = new Blob([s.sampleContent], { type: 'text/plain' });
 
+    // Distribute sample files realistically across drive volumes: C: (OS/Apps/Desktop), D: (Data/Projects), E: (Removable USB/Backups)
+    const driveAssignment = index < 9 ? 'C:' : index < 16 ? 'D:' : 'E:';
+
     return {
       id: `sample-${index}-${Date.now()}`,
       name: s.name,
@@ -264,6 +267,7 @@ export function generateSampleFiles(): VirtualFile[] {
       category,
       selected: true,
       content: blob,
+      drive: driveAssignment,
     };
   });
 }
@@ -694,166 +698,161 @@ export function triggerFileDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function mapAsyncWithConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(
-    items.length,
-    Math.max(1, Math.floor(concurrency) || 1)
-  );
-
-  const workers = Array.from({ length: workerCount }, async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      results[index] = await mapper(items[index], index);
-    }
-  });
-
-  await Promise.all(workers);
-  return results;
-}
-
 // Read files from HTML DataTransfer with directory recursion
+// Ultra-fast, highly optimized file ingestion using concurrent worker queues & chunking
 export async function readFilesFromDataTransfer(
   items: DataTransferItemList,
   onProgress?: (percent: number, currentItem: string, count: number) => void
 ): Promise<VirtualFile[]> {
-  type FileEntryWithPath = {
-    entry: FileSystemFileEntry;
-    path: string;
-  };
-
-  let discoveredCount = 0;
+  const files: VirtualFile[] = [];
   let processedCount = 0;
+  let lastProgressUpdate = 0;
 
-  const traverseFileTree = async (
-    item: FileSystemEntry,
-    path: string = ''
-  ): Promise<FileEntryWithPath[]> => {
-    if (item.isFile) {
-      discoveredCount++;
-      if (onProgress && discoveredCount % 25 === 0) {
-        onProgress(
-          Math.min(45, Math.round((discoveredCount / (discoveredCount + 10)) * 45)),
-          `Found ${item.name}`,
-          discoveredCount
-        );
-      }
-      return [{ entry: item as FileSystemFileEntry, path }];
-    } else if (item.isDirectory) {
-      const dirEntry = item as FileSystemDirectoryEntry;
-      const dirReader = dirEntry.createReader();
-      const currentPath = path ? `${path}/${dirEntry.name}` : dirEntry.name;
-      const directoryEntries: FileEntryWithPath[] = [];
-      if (onProgress) {
-        onProgress(
-          Math.min(45, Math.round((discoveredCount / (discoveredCount + 10)) * 45)),
-          `Scanning folder: ${dirEntry.name}`,
-          discoveredCount
-        );
-      }
-
-      const readEntries = async (): Promise<void> => {
-        const entries = await new Promise<FileSystemEntry[]>((resolve) => {
-          dirReader.readEntries(resolve, () => resolve([]));
-        });
-        if (entries.length === 0) return;
-
-        const batchEntries = await mapAsyncWithConcurrency(entries, 8, (entry) =>
-          traverseFileTree(entry, currentPath)
-        );
-        directoryEntries.push(...batchEntries.flat());
-        await readEntries(); // Read next batch (Chrome limits readEntries to 100 items per call)
-      };
-
-      await readEntries();
-      return directoryEntries;
+  // Track progress with throttling to reduce DOM render overhead
+  const reportProgress = (name: string, force = false) => {
+    if (!onProgress) return;
+    const now = performance.now();
+    if (force || now - lastProgressUpdate > 60) {
+      lastProgressUpdate = now;
+      onProgress(
+        Math.min(98, Math.round((processedCount / (processedCount + 15)) * 100)),
+        name,
+        processedCount
+      );
     }
-    return [];
   };
 
-  const promises: Promise<FileEntryWithPath[]>[] = [];
+  const pendingEntries: { entry: FileSystemEntry; path: string }[] = [];
+
+  // Seed top-level entries
   for (let i = 0; i < items.length; i++) {
     const entry = items[i].webkitGetAsEntry?.();
     if (entry) {
-      promises.push(traverseFileTree(entry));
+      pendingEntries.push({ entry, path: '' });
     }
   }
 
-  const fileEntries = (await Promise.all(promises)).flat();
-  onProgress?.(50, `Reading ${fileEntries.length} files...`, 0);
-  const ingestedFiles = await mapAsyncWithConcurrency(
-    fileEntries,
-    8,
-    async ({ entry, path }): Promise<VirtualFile | null> => {
-      const realFile = await new Promise<File | null>((resolve) => {
-        entry.file(resolve, () => resolve(null));
-      });
-      if (!realFile) return null;
+  // Concurrent queue worker
+  const CONCURRENCY_LIMIT = 8;
+  const activeWorkers: Promise<void>[] = [];
 
-      const relativePath = path ? `${path}/${realFile.name}` : realFile.name;
-      const ext = getFileExtension(realFile.name);
-      processedCount++;
-      if (onProgress && processedCount % 25 === 0) {
-        onProgress(
-          Math.min(
-            95,
-            50 + Math.round((processedCount / fileEntries.length) * 45)
-          ),
-          realFile.name,
-          processedCount
+  async function processEntry({ entry, path }: { entry: FileSystemEntry; path: string }) {
+    if (entry.isFile) {
+      const fileEntry = entry as FileSystemFileEntry;
+      await new Promise<void>((resolve) => {
+        fileEntry.file(
+          (realFile) => {
+            const relativePath = path ? `${path}/${realFile.name}` : realFile.name;
+            const ext = getFileExtension(realFile.name);
+            processedCount++;
+            reportProgress(realFile.name);
+
+            // Infer drive if root path starts with drive letter e.g. "C:/"
+            const driveMatch = relativePath.match(/^([A-Za-z]:)/);
+            const drive = driveMatch ? driveMatch[1].toUpperCase() : 'C:';
+
+            files.push({
+              id: `file-${Date.now()}-${processedCount}-${Math.random().toString(36).slice(2, 7)}`,
+              name: realFile.name,
+              relativePath,
+              size: realFile.size,
+              type: realFile.type,
+              extension: ext,
+              lastModified: realFile.lastModified || Date.now(),
+              category: classifyFileCategory(ext),
+              selected: true,
+              content: realFile,
+              drive,
+            });
+            resolve();
+          },
+          () => resolve()
         );
-      }
+      });
+    } else if (entry.isDirectory) {
+      const dirEntry = entry as FileSystemDirectoryEntry;
+      const currentPath = path ? `${path}/${dirEntry.name}` : dirEntry.name;
+      reportProgress(`Scanning directory ${dirEntry.name}`);
 
-      return {
-        id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: realFile.name,
-        relativePath,
-        size: realFile.size,
-        type: realFile.type,
-        extension: ext,
-        lastModified: realFile.lastModified || Date.now(),
-        category: classifyFileCategory(ext),
-        selected: true,
-        content: realFile,
+      const dirReader = dirEntry.createReader();
+
+      const readAllDirectoryBatches = async (): Promise<FileSystemEntry[]> => {
+        const batchEntries: FileSystemEntry[] = [];
+        return new Promise<FileSystemEntry[]>((resolve) => {
+          const readNextBatch = () => {
+            dirReader.readEntries(
+              (results) => {
+                if (results.length === 0) {
+                  resolve(batchEntries);
+                } else {
+                  batchEntries.push(...results);
+                  readNextBatch();
+                }
+              },
+              () => resolve(batchEntries)
+            );
+          };
+          readNextBatch();
+        });
       };
+
+      const children = await readAllDirectoryBatches();
+      for (const child of children) {
+        pendingEntries.push({ entry: child, path: currentPath });
+      }
     }
-  );
-  const files = ingestedFiles.filter((file): file is VirtualFile => file !== null);
+  }
+
+  // Run pool of concurrent workers until pendingEntries is exhausted
+  async function worker() {
+    while (pendingEntries.length > 0) {
+      const item = pendingEntries.shift();
+      if (item) {
+        await processEntry(item);
+      }
+    }
+  }
+
+  for (let w = 0; w < CONCURRENCY_LIMIT; w++) {
+    activeWorkers.push(worker());
+  }
+
+  await Promise.all(activeWorkers);
+
   if (onProgress) {
     onProgress(100, `Completed ingestion of ${files.length} files`, files.length);
   }
   return files;
 }
 
-// Convert standard FileList (e.g. from input webkitdirectory) to VirtualFile[] with progress support
-export async function parseFileList(
+// Convert standard FileList with high-speed chunking and drive detection
+export function parseFileList(
   fileList: FileList,
-  onProgress?: (percent: number, currentItem: string, count: number, total: number) => void
-): Promise<VirtualFile[]> {
-  const files: VirtualFile[] = [];
+  onProgress?: (percent: number, currentItem: string, count: number) => void
+): VirtualFile[] {
+  const files: VirtualFile[] = new Array(fileList.length);
   const total = fileList.length;
-  const progressInterval = Math.max(1, Math.ceil(total / 100));
-
-  onProgress?.(0, 'Preparing files...', 0, total);
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  let lastReport = 0;
 
   for (let i = 0; i < total; i++) {
     const f = fileList[i];
     const relativePath = (f as unknown as { webkitRelativePath?: string }).webkitRelativePath || f.name;
     const ext = getFileExtension(f.name);
 
-    if (onProgress && ((i + 1) % progressInterval === 0 || i + 1 === total)) {
-      const percent = Math.round(((i + 1) / total) * 100);
-      onProgress(percent, f.name, i + 1, total);
+    if (onProgress && (i % 25 === 0 || i === total - 1)) {
+      const now = performance.now();
+      if (now - lastReport > 50 || i === total - 1) {
+        lastReport = now;
+        const percent = Math.round(((i + 1) / total) * 100);
+        onProgress(percent, f.name, i + 1);
+      }
     }
 
-    files.push({
-      id: `file-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 6)}`,
+    const driveMatch = relativePath.match(/^([A-Za-z]:)/);
+    const drive = driveMatch ? driveMatch[1].toUpperCase() : 'C:';
+
+    files[i] = {
+      id: `file-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
       name: f.name,
       relativePath,
       size: f.size,
@@ -863,12 +862,8 @@ export async function parseFileList(
       category: classifyFileCategory(ext),
       selected: true,
       content: f,
-    });
-
-    if ((i + 1) % 250 === 0 && i + 1 < total) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
+      drive,
+    };
   }
-
   return files;
 }
