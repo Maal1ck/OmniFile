@@ -35,12 +35,13 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
   const [analyzing, setAnalyzing] = useState<boolean>(true);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
   const [activeAnalysisFile, setActiveAnalysisFile] = useState<SemanticAnalysis | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState<number>(200);
 
   useEffect(() => {
     let isCancelled = false;
     async function runAnalysis() {
       setAnalyzing(true);
-      const results = await mapAsyncWithConcurrency(files, 8, analyzeFileContentDNA);
+      const results = await mapAsyncWithConcurrency(files, 24, analyzeFileContentDNA);
       if (!isCancelled) {
         setAnalyses(results);
         setAnalyzing(false);
@@ -52,10 +53,20 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
     };
   }, [files]);
 
+  const fileById = useMemo(
+    () => new Map(files.map((f) => [f.id, f])),
+    [files]
+  );
+
   const filteredAnalyses = useMemo(() => {
     if (selectedTypeFilter === 'all') return analyses;
     return analyses.filter((a) => a.detectedType === selectedTypeFilter);
   }, [analyses, selectedTypeFilter]);
+
+  const visibleAnalyses = useMemo(
+    () => filteredAnalyses.slice(0, visibleLimit),
+    [filteredAnalyses, visibleLimit]
+  );
 
   const invoicesAndReceiptsCount = useMemo(() => {
     return analyses.filter((a) => a.detectedType === 'invoice' || a.detectedType === 'receipt').length;
@@ -80,10 +91,8 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
       return file;
     });
 
-    setTimeout(() => {
-      onFinishProgress();
-      onApplyRenamesAndSort(updated);
-    }, 400);
+    onFinishProgress();
+    onApplyRenamesAndSort(updated);
   };
 
   return (
@@ -168,7 +177,10 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setSelectedTypeFilter(tab.id)}
+              onClick={() => {
+                setSelectedTypeFilter(tab.id);
+                setVisibleLimit(200);
+              }}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                 selectedTypeFilter === tab.id
                   ? 'bg-slate-800 text-cyan-300 border border-slate-700 shadow-sm'
@@ -216,8 +228,8 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
                   </td>
                 </tr>
               ) : (
-                filteredAnalyses.map((sem) => {
-                  const originalFile = files.find((f) => f.id === sem.fileId);
+                visibleAnalyses.map((sem) => {
+                  const originalFile = fileById.get(sem.fileId);
                   if (!originalFile) return null;
 
                   return (
@@ -288,6 +300,17 @@ export const SemanticIntelligenceModule: React.FC<SemanticIntelligenceModuleProp
             </tbody>
           </table>
         </div>
+        {visibleAnalyses.length < filteredAnalyses.length && (
+          <div className="flex justify-center border-t border-slate-800 p-3">
+            <button
+              type="button"
+              onClick={() => setVisibleLimit((limit) => limit + 200)}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
+            >
+              {t.fileTable.showMore}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Inspector Modal */}

@@ -41,8 +41,10 @@ export async function mapAsyncWithConcurrency<T, R>(
 }
 
 export function getFileExtension(filename: string): string {
-  const parts = filename.split('.');
-  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot >= 0 && lastDot < filename.length - 1
+    ? filename.slice(lastDot + 1).toLowerCase()
+    : '';
 }
 
 export function getFileNameWithoutExtension(filename: string): string {
@@ -105,11 +107,60 @@ export const GEOSPATIAL_EXTENSIONS = new Set([
   'qml', 'sld', 'lyr', 'lyrx', 'qlr', 'mxd',
 ]);
 
+// Precomputed O(1) lookup table for instant, zero-allocation file classification
+const EXT_CATEGORY_MAP = new Map<string, FileCategory>();
+for (const ext of ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'pages', 'md', 'epub']) {
+  EXT_CATEGORY_MAP.set(ext, 'documents');
+}
+for (const ext of [...EXCEL_FILE_EXTENSIONS, 'csv', 'tsv', 'ods', 'numbers']) {
+  EXT_CATEGORY_MAP.set(ext, 'spreadsheets');
+}
+for (const ext of ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff', 'tif', 'heic', 'raw', 'psd']) {
+  EXT_CATEGORY_MAP.set(ext, 'images');
+}
+for (const ext of ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'aiff']) {
+  EXT_CATEGORY_MAP.set(ext, 'audio');
+}
+for (const ext of ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'm4v']) {
+  EXT_CATEGORY_MAP.set(ext, 'videos');
+}
+for (const ext of ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso']) {
+  EXT_CATEGORY_MAP.set(ext, 'archives');
+}
+for (const ext of ['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'scss', 'json', 'yaml', 'yml', 'xml', 'sql', 'sh', 'bat', 'c', 'cpp', 'java', 'go', 'rs', 'php']) {
+  EXT_CATEGORY_MAP.set(ext, 'code');
+}
+for (const ext of ['ppt', 'pptx', 'key', 'odp']) {
+  EXT_CATEGORY_MAP.set(ext, 'presentations');
+}
+for (const ext of ['sqlite', 'db', 'parquet', 'log', 'dat', 'bak', 'env']) {
+  EXT_CATEGORY_MAP.set(ext, 'data');
+}
+// Populate geospatial last so geospatial sidecars/datasets always take priority
+for (const ext of GEOSPATIAL_EXTENSIONS) {
+  EXT_CATEGORY_MAP.set(ext, 'geospatial');
+}
+
+// Fast-path guard: all COMPOUND_GIS_SUFFIXES end with one of these tails
+function mayHaveCompoundGisSuffix(lowerName: string): boolean {
+  return (
+    lowerName.endsWith('.xml') ||
+    lowerName.endsWith('.dbf') ||
+    lowerName.endsWith('.ovr') ||
+    lowerName.endsWith('.enp') ||
+    lowerName.endsWith('-wal') ||
+    lowerName.endsWith('-shm')
+  );
+}
+
 export function getEffectiveExtensionToken(filename: string): string {
   const lower = filename.toLowerCase();
-  for (const suffix of COMPOUND_GIS_SUFFIXES) {
-    if (lower.endsWith(suffix)) {
-      return suffix.slice(1); // without leading dot
+  if (mayHaveCompoundGisSuffix(lower)) {
+    for (let i = 0; i < COMPOUND_GIS_SUFFIXES.length; i++) {
+      const suffix = COMPOUND_GIS_SUFFIXES[i];
+      if (lower.endsWith(suffix)) {
+        return suffix.slice(1); // without leading dot
+      }
     }
   }
   return getFileExtension(filename);
@@ -117,37 +168,17 @@ export function getEffectiveExtensionToken(filename: string): string {
 
 export function classifyFileCategory(extension: string, filename?: string): FileCategory {
   const ext = extension.toLowerCase();
-  const effectiveToken = filename ? getEffectiveExtensionToken(filename) : ext;
-
-  if (
-    filename &&
-    COMPOUND_GIS_SUFFIXES.some((s) => filename.toLowerCase().endsWith(s))
-  ) {
-    return 'geospatial';
+  if (filename) {
+    const lower = filename.toLowerCase();
+    if (mayHaveCompoundGisSuffix(lower)) {
+      for (let i = 0; i < COMPOUND_GIS_SUFFIXES.length; i++) {
+        if (lower.endsWith(COMPOUND_GIS_SUFFIXES[i])) {
+          return 'geospatial';
+        }
+      }
+    }
   }
-
-  const documents = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'pages', 'md', 'epub'];
-  const spreadsheets = [...EXCEL_FILE_EXTENSIONS, 'csv', 'tsv', 'ods', 'numbers'];
-  const images = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff', 'tif', 'heic', 'raw', 'psd'];
-  const audio = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'aiff'];
-  const videos = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'm4v'];
-  const archives = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso'];
-  const code = ['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'scss', 'json', 'yaml', 'yml', 'xml', 'sql', 'sh', 'bat', 'c', 'cpp', 'java', 'go', 'rs', 'php'];
-  const presentations = ['ppt', 'pptx', 'key', 'odp'];
-  const data = ['sqlite', 'db', 'parquet', 'log', 'dat', 'bak', 'env'];
-
-  if (GEOSPATIAL_EXTENSIONS.has(ext) || GEOSPATIAL_EXTENSIONS.has(effectiveToken)) return 'geospatial';
-  if (documents.includes(ext)) return 'documents';
-  if (spreadsheets.includes(ext)) return 'spreadsheets';
-  if (images.includes(ext)) return 'images';
-  if (audio.includes(ext)) return 'audio';
-  if (videos.includes(ext)) return 'videos';
-  if (archives.includes(ext)) return 'archives';
-  if (code.includes(ext)) return 'code';
-  if (presentations.includes(ext)) return 'presentations';
-  if (data.includes(ext)) return 'data';
-
-  return 'other';
+  return EXT_CATEGORY_MAP.get(ext) || 'other';
 }
 
 export function formatBytes(bytes: number, decimals: number = 2): string {
@@ -533,21 +564,24 @@ function extractDatasetStem(relativePath: string): {
   displayName: string;
   token: string;
 } {
-  const normalized = relativePath.replace(/\\/g, '/');
+  const normalized = relativePath.indexOf('\\') >= 0 ? relativePath.replace(/\\/g, '/') : relativePath;
   const slashIdx = normalized.lastIndexOf('/');
   const dir = slashIdx >= 0 ? normalized.slice(0, slashIdx) : '';
   const fileName = slashIdx >= 0 ? normalized.slice(slashIdx + 1) : normalized;
   const lowerName = fileName.toLowerCase();
 
-  for (const suffix of COMPOUND_GIS_SUFFIXES) {
-    if (lowerName.endsWith(suffix)) {
-      const stem = fileName.slice(0, fileName.length - suffix.length);
-      return {
-        dirKey: dir.toLowerCase(),
-        stemKey: stem.toLowerCase(),
-        displayName: stem || fileName,
-        token: suffix.slice(1),
-      };
+  if (mayHaveCompoundGisSuffix(lowerName)) {
+    for (let i = 0; i < COMPOUND_GIS_SUFFIXES.length; i++) {
+      const suffix = COMPOUND_GIS_SUFFIXES[i];
+      if (lowerName.endsWith(suffix)) {
+        const stem = fileName.slice(0, fileName.length - suffix.length);
+        return {
+          dirKey: dir.toLowerCase(),
+          stemKey: stem.toLowerCase(),
+          displayName: stem || fileName,
+          token: suffix.slice(1),
+        };
+      }
     }
   }
 
@@ -575,12 +609,16 @@ export function analyzeComplementaryBundles(files: VirtualFile[]): {
     { displayName: string; entries: Array<{ file: VirtualFile; token: string }> }
   >();
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     const info = extractDatasetStem(file.relativePath || file.name);
     const key = `${info.dirKey}::${info.stemKey}`;
-    const existing = groups.get(key) || { displayName: info.displayName, entries: [] };
+    let existing = groups.get(key);
+    if (!existing) {
+      existing = { displayName: info.displayName, entries: [] };
+      groups.set(key, existing);
+    }
     existing.entries.push({ file, token: info.token });
-    groups.set(key, existing);
   }
 
   const bundles: ComplementaryBundle[] = [];
@@ -589,46 +627,50 @@ export function analyzeComplementaryBundles(files: VirtualFile[]): {
   for (const [bundleId, group] of groups.entries()) {
     if (group.entries.length < 2) continue;
 
-    const tokens = group.entries.map((e) => e.token);
+    const entries = group.entries;
+    const tokens = entries.map((e) => e.token);
     const hasShp = tokens.includes('shp');
-    const shapefileSidecarCount = tokens.filter((t) => SHAPEFILE_COMPANIONS.has(t)).length;
+    let shapefileSidecarCount = 0;
+    for (let i = 0; i < tokens.length; i++) {
+      if (SHAPEFILE_COMPANIONS.has(tokens[i])) shapefileSidecarCount++;
+    }
 
     const hasTab = tokens.includes('tab');
-    const hasMapInfoPartner = tokens.some((t) => t !== 'tab' && MAPINFO_COMPANIONS.has(t));
+    const hasMapInfoPartner = hasTab && tokens.some((t) => t !== 'tab' && MAPINFO_COMPANIONS.has(t));
 
-    const rasterEntry = group.entries.find((e) => RASTER_PRIMARIES.has(e.token));
-    const hasRasterSidecar = group.entries.some(
-      (e) => e !== rasterEntry && RASTER_SIDECARS.has(e.token)
-    );
+    const rasterEntry = entries.find((e) => RASTER_PRIMARIES.has(e.token));
+    const hasRasterSidecar = rasterEntry
+      ? entries.some((e) => e !== rasterEntry && RASTER_SIDECARS.has(e.token))
+      : false;
 
-    const vectorGisEntry = group.entries.find((e) => VECTOR_GIS_PRIMARIES.has(e.token));
-    const hasVectorGisSidecar = group.entries.some(
-      (e) => e !== vectorGisEntry && VECTOR_GIS_SIDECARS.has(e.token)
-    );
+    const vectorGisEntry = entries.find((e) => VECTOR_GIS_PRIMARIES.has(e.token));
+    const hasVectorGisSidecar = vectorGisEntry
+      ? entries.some((e) => e !== vectorGisEntry && VECTOR_GIS_SIDECARS.has(e.token))
+      : false;
 
     let bundle: ComplementaryBundle | null = null;
 
-    if (hasShp || (shapefileSidecarCount >= 2 && tokens.some((t) => ['shx', 'dbf', 'prj', 'qix', 'sbn'].includes(t)))) {
+    if (hasShp || (shapefileSidecarCount >= 2 && tokens.some((t) => t === 'shx' || t === 'dbf' || t === 'prj' || t === 'qix' || t === 'sbn'))) {
       const primary =
-        group.entries.find((e) => e.token === 'shp')?.file ||
-        group.entries.find((e) => e.token === 'dbf')?.file ||
-        group.entries[0].file;
+        entries.find((e) => e.token === 'shp')?.file ||
+        entries.find((e) => e.token === 'dbf')?.file ||
+        entries[0].file;
       bundle = {
         id: bundleId,
         kind: 'shapefile',
         displayName: group.displayName,
         primaryFile: primary,
-        files: group.entries.map((e) => e.file),
+        files: entries.map((e) => e.file),
         isGeospatial: true,
       };
     } else if (hasTab && hasMapInfoPartner) {
-      const primary = group.entries.find((e) => e.token === 'tab')!.file;
+      const primary = entries.find((e) => e.token === 'tab')!.file;
       bundle = {
         id: bundleId,
         kind: 'mapinfo',
         displayName: group.displayName,
         primaryFile: primary,
-        files: group.entries.map((e) => e.file),
+        files: entries.map((e) => e.file),
         isGeospatial: true,
       };
     } else if (rasterEntry && hasRasterSidecar) {
@@ -637,7 +679,7 @@ export function analyzeComplementaryBundles(files: VirtualFile[]): {
         kind: 'georef_raster',
         displayName: group.displayName,
         primaryFile: rasterEntry.file,
-        files: group.entries.map((e) => e.file),
+        files: entries.map((e) => e.file),
         isGeospatial: true,
       };
     } else if (vectorGisEntry && hasVectorGisSidecar) {
@@ -646,19 +688,19 @@ export function analyzeComplementaryBundles(files: VirtualFile[]): {
         kind: 'geospatial_dataset',
         displayName: group.displayName,
         primaryFile: vectorGisEntry.file,
-        files: group.entries.map((e) => e.file),
+        files: entries.map((e) => e.file),
         isGeospatial: true,
       };
     } else {
-      const sidecarEntries = group.entries.filter((e) => GENERIC_SIDECARS.has(e.token));
-      const primaryEntries = group.entries.filter((e) => !GENERIC_SIDECARS.has(e.token));
+      const sidecarEntries = entries.filter((e) => GENERIC_SIDECARS.has(e.token));
+      const primaryEntries = entries.filter((e) => !GENERIC_SIDECARS.has(e.token));
       if (sidecarEntries.length > 0 && primaryEntries.length > 0) {
         bundle = {
           id: bundleId,
           kind: 'complementary_pair',
           displayName: group.displayName,
           primaryFile: primaryEntries[0].file,
-          files: group.entries.map((e) => e.file),
+          files: entries.map((e) => e.file),
           isGeospatial: false,
         };
       }
@@ -666,7 +708,9 @@ export function analyzeComplementaryBundles(files: VirtualFile[]): {
 
     if (bundle) {
       bundles.push(bundle);
-      bundle.files.forEach((f) => fileToBundle.set(f.id, bundle!));
+      for (let i = 0; i < bundle.files.length; i++) {
+        fileToBundle.set(bundle.files[i].id, bundle);
+      }
     }
   }
 
@@ -676,15 +720,47 @@ export function analyzeComplementaryBundles(files: VirtualFile[]): {
 // Compute Smart Document & File Organization preview
 export function computeSmartOrganization(
   files: VirtualFile[],
-  config: OrganizeConfig
+  config: OrganizeConfig,
+  precomputedBundles?: { bundles: ComplementaryBundle[]; fileToBundle: Map<string, ComplementaryBundle> }
 ): OrganizeResult[] {
   const usedPaths = new Set<string>();
   const groupComplementary = config.groupComplementaryFiles !== false;
   const bundleGeospatialSubfolders = config.bundleGeospatialSubfolders !== false;
 
   const { fileToBundle } = groupComplementary
-    ? analyzeComplementaryBundles(files)
+    ? (precomputedBundles || analyzeComplementaryBundles(files))
     : { fileToBundle: new Map<string, ComplementaryBundle>() };
+
+  // Precompute custom rules lookup map for O(1) resolution
+  const customRuleByExt = new Map<string, CustomOrganizeRule>();
+  for (let i = 0; i < config.customRules.length; i++) {
+    const rule = config.customRules[i];
+    for (let j = 0; j < rule.extensions.length; j++) {
+      const cleanExt = rule.extensions[j].replace(/^\./, '').toLowerCase();
+      if (cleanExt && !customRuleByExt.has(cleanExt)) {
+        customRuleByExt.set(cleanExt, rule);
+      }
+    }
+  }
+
+  // Hoist config string normalization outside per-file loop
+  const outputFolderName = config.outputFolderName.trim().replace(/[\\/]/g, '_').replace(/^\.+$/, '');
+  const folderNamePrefix = config.folderPrefix.replace(/[\\/]/g, '_');
+  const folderNameSuffix = config.folderSuffix.replace(/[\\/]/g, '_');
+  const needsDate =
+    config.strategy === 'date' ||
+    config.strategy === 'category_date' ||
+    config.strategy === 'extension_date';
+  const dateCache = new Map<number, string>();
+
+  const getCachedDate = (ts: number): string => {
+    let val = dateCache.get(ts);
+    if (val === undefined) {
+      val = formatDate(ts, config.dateFormat);
+      dateCache.set(ts, val);
+    }
+    return val;
+  };
 
   // Pre-resolve target folder for each bundle using its primary file so all companions stay together
   const bundleFolderCache = new Map<
@@ -698,15 +774,11 @@ export function computeSmartOrganization(
     allowCustomRules = true
   ): { targetFolder: string; category: FileCategory; ruleMatched?: string } => {
     const ext = file.extension.toLowerCase();
-    const category = forcedCategory || classifyFileCategory(ext, file.name);
+    const category = forcedCategory || file.category || classifyFileCategory(ext, file.name);
     let targetFolder = '';
     let ruleMatched: string | undefined = undefined;
 
-    const matchedCustom = allowCustomRules
-      ? config.customRules.find((rule) =>
-          rule.extensions.some((e) => e.replace(/^\./, '').toLowerCase() === ext)
-        )
-      : undefined;
+    const matchedCustom = allowCustomRules ? customRuleByExt.get(ext) : undefined;
 
     if (EXCEL_FILE_EXTENSIONS.has(ext) && category !== 'geospatial') {
       targetFolder = 'Excel Files';
@@ -715,8 +787,7 @@ export function computeSmartOrganization(
       targetFolder = matchedCustom.targetFolder;
       ruleMatched = matchedCustom.name;
     } else {
-      const dateVal = config.dateField === 'created' ? file.lastModified : file.lastModified;
-      const dateSegment = formatDate(dateVal, config.dateFormat);
+      const dateSegment = needsDate ? getCachedDate(file.lastModified) : '';
 
       switch (config.strategy) {
         case 'category':
@@ -744,7 +815,10 @@ export function computeSmartOrganization(
     return { targetFolder, category, ruleMatched };
   };
 
-  return files.map((file) => {
+  const results: OrganizeResult[] = new Array(files.length);
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     const bundle = groupComplementary ? fileToBundle.get(file.id) : undefined;
     let targetFolder = '';
     let category: FileCategory;
@@ -791,19 +865,19 @@ export function computeSmartOrganization(
 
     // Clean folder path
     targetFolder = targetFolder.replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
-    const outputFolderName = config.outputFolderName.trim().replace(/[\\/]/g, '_').replace(/^\.+$/, '');
     if (outputFolderName) targetFolder = `${outputFolderName}/${targetFolder}`;
-    const folderParts = targetFolder.split('/');
-    const folderNamePrefix = config.folderPrefix.replace(/[\\/]/g, '_');
-    const folderNameSuffix = config.folderSuffix.replace(/[\\/]/g, '_');
-    const targetPrefixIndex = bundle?.isGeospatial && bundleGeospatialSubfolders && folderParts.length > 1
-      ? folderParts.length - 2
-      : folderParts.length - 1;
-    folderParts[targetPrefixIndex] = `${folderNamePrefix}${folderParts[targetPrefixIndex]}${folderNameSuffix}`;
-    targetFolder = folderParts.join('/');
+    if (folderNamePrefix || folderNameSuffix) {
+      const folderParts = targetFolder.split('/');
+      const targetPrefixIndex = bundle?.isGeospatial && bundleGeospatialSubfolders && folderParts.length > 1
+        ? folderParts.length - 2
+        : folderParts.length - 1;
+      folderParts[targetPrefixIndex] = `${folderNamePrefix}${folderParts[targetPrefixIndex]}${folderNameSuffix}`;
+      targetFolder = folderParts.join('/');
+    }
 
     let targetPath = `${targetFolder}/${file.name}`;
-    const hasCollision = usedPaths.has(targetPath.toLowerCase());
+    let lowerTarget = targetPath.toLowerCase();
+    const hasCollision = usedPaths.has(lowerTarget);
     let included = true;
 
     if (hasCollision && config.collisionResolution === 'skip') {
@@ -815,13 +889,14 @@ export function computeSmartOrganization(
       let suffix = 2;
       do {
         targetPath = `${targetFolder}/${baseName} (${suffix})${extension}`;
+        lowerTarget = targetPath.toLowerCase();
         suffix += 1;
-      } while (usedPaths.has(targetPath.toLowerCase()));
+      } while (usedPaths.has(lowerTarget));
     }
 
-    if (included) usedPaths.add(targetPath.toLowerCase());
+    if (included) usedPaths.add(lowerTarget);
 
-    return {
+    results[i] = {
       file,
       originalPath: file.relativePath,
       destinationFolder: targetFolder,
@@ -834,10 +909,21 @@ export function computeSmartOrganization(
       bundleName: bundle?.displayName,
       bundleCount: bundle?.files.length,
     };
-  });
+  }
+
+  return results;
 }
 
-// Generate ZIP file with JSZip
+const ALREADY_COMPRESSED_EXTS = new Set([
+  'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic',
+  'mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v',
+  'mp3', 'aac', 'ogg', 'flac', 'm4a',
+  'zip', 'rar', '7z', 'gz', 'bz2',
+  'docx', 'xlsx', 'pptx', 'pdf', 'kmz',
+  'laz', 'ecw', 'jp2',
+]);
+
+// Generate ZIP file with JSZip (skips redundant DEFLATE on already-compressed binary formats)
 export async function createZipArchive(
   items: Array<{ path: string; file: VirtualFile }>,
   options: {
@@ -846,24 +932,29 @@ export async function createZipArchive(
   }
 ): Promise<Blob> {
   const zip = new JSZip();
+  const useDeflate = Boolean(options.compressionLevel && options.compressionLevel > 0);
+  const compression = useDeflate ? 'DEFLATE' : 'STORE';
+  const compressionOptions = {
+    level: options.compressionLevel || 6,
+  };
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     let content: Blob | ArrayBuffer | string = item.file.content || '';
 
-    // If no content in virtual file, create empty placeholder with metadata
     if (!content) {
       content = `[File content for: ${item.file.name} | Size: ${item.file.size} bytes]`;
     }
 
-    zip.file(item.path, content);
+    const ext = item.file.extension.toLowerCase();
+    if (useDeflate && ALREADY_COMPRESSED_EXTS.has(ext)) {
+      zip.file(item.path, content, { compression: 'STORE' });
+    } else {
+      zip.file(item.path, content);
+    }
   }
 
-  const compression = options.compressionLevel && options.compressionLevel > 0 ? 'DEFLATE' : 'STORE';
-  const compressionOptions = {
-    level: options.compressionLevel || 6,
-  };
-
+  let lastProgressAt = 0;
   const blob = await zip.generateAsync(
     {
       type: 'blob',
@@ -872,7 +963,12 @@ export async function createZipArchive(
     },
     (metadata) => {
       if (options.onProgress) {
-        options.onProgress(Math.round(metadata.percent), metadata.currentFile || 'Compiling...');
+        const now = performance.now();
+        const pct = Math.round(metadata.percent);
+        if (pct >= 100 || now - lastProgressAt > 80) {
+          lastProgressAt = now;
+          options.onProgress(pct, metadata.currentFile || 'Compiling...');
+        }
       }
     }
   );
@@ -892,8 +988,7 @@ export function triggerFileDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Read files from HTML DataTransfer with directory recursion
-// Ultra-fast, highly optimized file ingestion using concurrent worker queues & chunking
+// Ultra-fast concurrent DataTransfer ingestion with O(1) work-stealing queue & throttled progress
 export async function readFilesFromDataTransfer(
   items: DataTransferItemList,
   onProgress?: (percent: number, currentItem: string, count: number) => void
@@ -901,12 +996,13 @@ export async function readFilesFromDataTransfer(
   const files: VirtualFile[] = [];
   let processedCount = 0;
   let lastProgressUpdate = 0;
+  const batchTimestamp = Date.now();
+  const idPrefix = `file-${batchTimestamp}-`;
 
-  // Track progress with throttling to reduce DOM render overhead
   const reportProgress = (name: string, force = false) => {
     if (!onProgress) return;
     const now = performance.now();
-    if (force || now - lastProgressUpdate > 60) {
+    if (force || now - lastProgressUpdate > 80) {
       lastProgressUpdate = now;
       onProgress(
         Math.min(98, Math.round((processedCount / (processedCount + 15)) * 100)),
@@ -916,9 +1012,7 @@ export async function readFilesFromDataTransfer(
     }
   };
 
-  const pendingEntries: { entry: FileSystemEntry; path: string }[] = [];
-
-  // Seed top-level entries
+  const pendingEntries: Array<{ entry: FileSystemEntry; path: string }> = [];
   for (let i = 0; i < items.length; i++) {
     const entry = items[i].webkitGetAsEntry?.();
     if (entry) {
@@ -926,9 +1020,14 @@ export async function readFilesFromDataTransfer(
     }
   }
 
-  // Concurrent queue worker
-  const CONCURRENCY_LIMIT = 8;
-  const activeWorkers: Promise<void>[] = [];
+  let head = 0;
+  let inFlight = 0;
+  const waiters: Array<() => void> = [];
+  const wakeWaiters = () => {
+    while (waiters.length > 0) {
+      waiters.pop()!();
+    }
+  };
 
   async function processEntry({ entry, path }: { entry: FileSystemEntry; path: string }) {
     if (entry.isFile) {
@@ -938,18 +1037,17 @@ export async function readFilesFromDataTransfer(
           (realFile) => {
             const relativePath = path ? `${path}/${realFile.name}` : realFile.name;
             const ext = getFileExtension(realFile.name);
-            processedCount++;
+            const idx = ++processedCount;
             reportProgress(realFile.name);
 
-            // Infer drive if root path starts with drive letter e.g. "C:/"
             files.push({
-              id: `file-${Date.now()}-${processedCount}-${Math.random().toString(36).slice(2, 7)}`,
+              id: `${idPrefix}${idx}`,
               name: realFile.name,
               relativePath,
               size: realFile.size,
               type: realFile.type,
               extension: ext,
-              lastModified: realFile.lastModified || Date.now(),
+              lastModified: realFile.lastModified || batchTimestamp,
               category: classifyFileCategory(ext, realFile.name),
               selected: true,
               content: realFile,
@@ -962,66 +1060,192 @@ export async function readFilesFromDataTransfer(
     } else if (entry.isDirectory) {
       const dirEntry = entry as FileSystemDirectoryEntry;
       const currentPath = path ? `${path}/${dirEntry.name}` : dirEntry.name;
-      reportProgress(`Scanning directory ${dirEntry.name}`);
+      reportProgress(dirEntry.name);
 
       const dirReader = dirEntry.createReader();
-
-      const readAllDirectoryBatches = async (): Promise<FileSystemEntry[]> => {
-        const batchEntries: FileSystemEntry[] = [];
-        return new Promise<FileSystemEntry[]>((resolve) => {
-          const readNextBatch = () => {
-            dirReader.readEntries(
-              (results) => {
-                if (results.length === 0) {
-                  resolve(batchEntries);
-                } else {
-                  batchEntries.push(...results);
-                  readNextBatch();
+      await new Promise<void>((resolve) => {
+        const readNextBatch = () => {
+          dirReader.readEntries(
+            (results) => {
+              if (results.length === 0) {
+                resolve();
+              } else {
+                for (let i = 0; i < results.length; i++) {
+                  pendingEntries.push({ entry: results[i], path: currentPath });
                 }
-              },
-              () => resolve(batchEntries)
-            );
-          };
-          readNextBatch();
-        });
-      };
-
-      const children = await readAllDirectoryBatches();
-      for (const child of children) {
-        pendingEntries.push({ entry: child, path: currentPath });
-      }
+                wakeWaiters();
+                readNextBatch();
+              }
+            },
+            () => resolve()
+          );
+        };
+        readNextBatch();
+      });
     }
   }
 
-  // Run pool of concurrent workers until pendingEntries is exhausted
+  const CONCURRENCY_LIMIT = 32;
   async function worker() {
-    while (pendingEntries.length > 0) {
-      const item = pendingEntries.shift();
-      if (item) {
-        await processEntry(item);
+    while (true) {
+      if (head < pendingEntries.length) {
+        const item = pendingEntries[head++];
+        inFlight++;
+        try {
+          await processEntry(item);
+        } finally {
+          inFlight--;
+          wakeWaiters();
+        }
+      } else if (inFlight > 0) {
+        await new Promise<void>((resolve) => waiters.push(resolve));
+      } else {
+        break;
       }
     }
   }
 
+  const activeWorkers: Promise<void>[] = new Array(CONCURRENCY_LIMIT);
   for (let w = 0; w < CONCURRENCY_LIMIT; w++) {
-    activeWorkers.push(worker());
+    activeWorkers[w] = worker();
   }
-
   await Promise.all(activeWorkers);
 
   if (onProgress) {
-    onProgress(100, `Completed ingestion of ${files.length} files`, files.length);
+    onProgress(100, `${files.length}`, files.length);
   }
   return files;
 }
 
-// Convert standard FileList with high-speed chunking and drive detection
+// High-speed concurrent FileSystemDirectoryHandle walker (32-worker pool, O(1) queue cursor)
+export async function readDirectoryHandleFast(
+  rootHandle: FileSystemDirectoryHandle,
+  onProgress?: (percent: number, currentItem: string, count: number) => void
+): Promise<VirtualFile[]> {
+  const gatheredFiles: VirtualFile[] = [];
+  const pendingDirs: Array<{ handle: FileSystemDirectoryHandle; path: string }> = [
+    { handle: rootHandle, path: rootHandle.name },
+  ];
+  let head = 0;
+  let inFlight = 0;
+  let count = 0;
+  let lastReport = 0;
+  const batchTimestamp = Date.now();
+  const idPrefix = `native-${batchTimestamp}-`;
+
+  const waiters: Array<() => void> = [];
+  const wakeWaiters = () => {
+    while (waiters.length > 0) {
+      waiters.pop()!();
+    }
+  };
+
+  const reportProgress = (name: string) => {
+    if (!onProgress) return;
+    const now = performance.now();
+    if (now - lastReport > 80) {
+      lastReport = now;
+      onProgress(
+        Math.min(98, Math.round((count / (count + 15)) * 100)),
+        name,
+        count
+      );
+    }
+  };
+
+  const pendingFileReads: Array<{ fileHandle: FileSystemFileHandle; basePath: string }> = [];
+  let fileReadHead = 0;
+
+  async function processDirectory(current: { handle: FileSystemDirectoryHandle; path: string }) {
+    const iterable = (current.handle as unknown as {
+      values: () => AsyncIterable<FileSystemHandle>;
+    }).values();
+
+    for await (const entry of iterable) {
+      if (entry.kind === 'directory') {
+        const subDirHandle = entry as FileSystemDirectoryHandle;
+        const newPath = current.path ? `${current.path}/${entry.name}` : entry.name;
+        pendingDirs.push({ handle: subDirHandle, path: newPath });
+        wakeWaiters();
+      } else if (entry.kind === 'file') {
+        pendingFileReads.push({
+          fileHandle: entry as FileSystemFileHandle,
+          basePath: current.path,
+        });
+        wakeWaiters();
+      }
+    }
+  }
+
+  async function worker() {
+    while (true) {
+      if (head < pendingDirs.length) {
+        const dir = pendingDirs[head++];
+        inFlight++;
+        try {
+          await processDirectory(dir);
+        } finally {
+          inFlight--;
+          wakeWaiters();
+        }
+      } else if (fileReadHead < pendingFileReads.length) {
+        const task = pendingFileReads[fileReadHead++];
+        inFlight++;
+        try {
+          const file = await task.fileHandle.getFile();
+          const idx = ++count;
+          reportProgress(file.name);
+          const relativePath = task.basePath ? `${task.basePath}/${file.name}` : file.name;
+          const ext = getFileExtension(file.name);
+
+          gatheredFiles.push({
+            id: `${idPrefix}${idx}`,
+            name: file.name,
+            relativePath,
+            size: file.size,
+            type: file.type,
+            extension: ext,
+            lastModified: file.lastModified || batchTimestamp,
+            category: classifyFileCategory(ext, file.name),
+            selected: true,
+            content: file,
+          });
+        } catch {
+          // Skip unreadable handles safely
+        } finally {
+          inFlight--;
+          wakeWaiters();
+        }
+      } else if (inFlight > 0) {
+        await new Promise<void>((resolve) => waiters.push(resolve));
+      } else {
+        break;
+      }
+    }
+  }
+
+  const CONCURRENCY_LIMIT = 32;
+  const workers: Promise<void>[] = new Array(CONCURRENCY_LIMIT);
+  for (let i = 0; i < CONCURRENCY_LIMIT; i++) {
+    workers[i] = worker();
+  }
+  await Promise.all(workers);
+
+  if (onProgress) {
+    onProgress(100, `${gatheredFiles.length}`, gatheredFiles.length);
+  }
+  return gatheredFiles;
+}
+
+// Convert standard FileList with O(1) classification and zero per-file PRNG overhead
 export function parseFileList(
   fileList: FileList,
   onProgress?: (percent: number, currentItem: string, count: number) => void
 ): VirtualFile[] {
-  const files: VirtualFile[] = new Array(fileList.length);
   const total = fileList.length;
+  const files: VirtualFile[] = new Array(total);
+  const batchTimestamp = Date.now();
+  const idPrefix = `file-${batchTimestamp}-`;
   let lastReport = 0;
 
   for (let i = 0; i < total; i++) {
@@ -1029,9 +1253,9 @@ export function parseFileList(
     const relativePath = (f as unknown as { webkitRelativePath?: string }).webkitRelativePath || f.name;
     const ext = getFileExtension(f.name);
 
-    if (onProgress && (i % 25 === 0 || i === total - 1)) {
+    if (onProgress && (i % 100 === 0 || i === total - 1)) {
       const now = performance.now();
-      if (now - lastReport > 50 || i === total - 1) {
+      if (now - lastReport > 80 || i === total - 1) {
         lastReport = now;
         const percent = Math.round(((i + 1) / total) * 100);
         onProgress(percent, f.name, i + 1);
@@ -1039,13 +1263,13 @@ export function parseFileList(
     }
 
     files[i] = {
-      id: `file-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `${idPrefix}${i}`,
       name: f.name,
       relativePath,
       size: f.size,
       type: f.type,
       extension: ext,
-      lastModified: f.lastModified || Date.now(),
+      lastModified: f.lastModified || batchTimestamp,
       category: classifyFileCategory(ext, f.name),
       selected: true,
       content: f,

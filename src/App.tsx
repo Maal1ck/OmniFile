@@ -69,6 +69,7 @@ export default function App() {
         return;
       }
       setFiles((prev) => {
+        if (prev.length === 0) return newFiles;
         const existingIds = new Set(prev.map((f) => f.id));
         const fresh = newFiles.filter((f) => !existingIds.has(f.id));
         return [...fresh, ...prev];
@@ -171,25 +172,28 @@ export default function App() {
   }, [files, t.app]);
 
   // Progress modal helpers
-  const handleStartProgress = (title: string) => {
-    setProgressState({
-      isOpen: true,
-      title,
-      percent: 0,
-      currentItem: t.app.initializing,
-      isComplete: false,
-    });
-  };
+  const handleStartProgress = useCallback(
+    (title: string) => {
+      setProgressState({
+        isOpen: true,
+        title,
+        percent: 0,
+        currentItem: t.app.initializing,
+        isComplete: false,
+      });
+    },
+    [t.app.initializing]
+  );
 
-  const handleUpdateProgress = (percent: number, item: string) => {
+  const handleUpdateProgress = useCallback((percent: number, item: string) => {
     setProgressState((prev) => ({
       ...prev,
       percent,
       currentItem: item,
     }));
-  };
+  }, []);
 
-  const handleFinishProgress = () => {
+  const handleFinishProgress = useCallback(() => {
     setProgressState((prev) => ({
       ...prev,
       percent: 100,
@@ -197,8 +201,8 @@ export default function App() {
     }));
     setTimeout(() => {
       setProgressState((prev) => ({ ...prev, isOpen: false }));
-    }, 1200);
-  };
+    }, 200);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {

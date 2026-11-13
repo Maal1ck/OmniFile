@@ -16,6 +16,7 @@ import {
   triggerFileDownload,
   getFileExtension,
   classifyFileCategory,
+  mapAsyncWithConcurrency,
 } from '../utils/fileHelpers';
 import { useAppSettings } from '../context/AppSettingsContext';
 
@@ -104,7 +105,9 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
 
           const base = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
           triggerFileDownload(singleBlob, `${base}.zip`);
-          await new Promise((r) => setTimeout(r, 200));
+          if (i < targetFiles.length - 1) {
+            await new Promise((r) => setTimeout(r, 20));
+          }
         }
       }
     } finally {
@@ -122,34 +125,46 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
 
     try {
       const zip = await JSZip.loadAsync(file);
+      const entries = Object.entries(zip.files);
       const items: Array<{ name: string; size: number; isDir: boolean }> = [];
-      const extractedVirtualFiles: VirtualFile[] = [];
+      const fileEntries: Array<{ relativePath: string; zipEntry: JSZip.JSZipObject }> = [];
 
-      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+      for (let i = 0; i < entries.length; i++) {
+        const [relativePath, zipEntry] = entries[i];
         items.push({
           name: relativePath,
           // @ts-expect-error JSZip internal size property
           size: zipEntry._data?.uncompressedSize || 0,
           isDir: zipEntry.dir,
         });
-
         if (!zipEntry.dir) {
+          fileEntries.push({ relativePath, zipEntry });
+        }
+      }
+
+      const batchTs = Date.now();
+      const extractedVirtualFiles = await mapAsyncWithConcurrency(
+        fileEntries,
+        16,
+        async ({ relativePath, zipEntry }, idx): Promise<VirtualFile> => {
           const blob = await zipEntry.async('blob');
           const ext = getFileExtension(zipEntry.name);
-          extractedVirtualFiles.push({
-            id: `zip-extracted-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-            name: zipEntry.name.split('/').pop() || zipEntry.name,
+          const slashIdx = zipEntry.name.lastIndexOf('/');
+          const name = slashIdx >= 0 ? zipEntry.name.slice(slashIdx + 1) : zipEntry.name;
+          return {
+            id: `zip-extracted-${batchTs}-${idx}`,
+            name: name || zipEntry.name,
             relativePath,
             size: blob.size,
             type: blob.type,
             extension: ext,
-            lastModified: zipEntry.date ? zipEntry.date.getTime() : Date.now(),
+            lastModified: zipEntry.date ? zipEntry.date.getTime() : batchTs,
             category: classifyFileCategory(ext, zipEntry.name),
             selected: true,
             content: blob,
-          });
+          };
         }
-      }
+      );
 
       setInspectedItems(items);
       setInspectedZipFiles(extractedVirtualFiles);

@@ -10,23 +10,42 @@ import {
 } from '../types/fileSystem';
 import {
   formatBytes,
-  getFileExtension,
   getFileNameWithoutExtension,
   mapAsyncWithConcurrency,
 } from './fileHelpers';
+
+const BYTE_TO_HEX: string[] = Array.from({ length: 256 }, (_, i) =>
+  i.toString(16).padStart(2, '0')
+);
+
+function digestBufferToHex32(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const len = Math.min(16, bytes.length);
+  let out = '';
+  for (let i = 0; i < len; i++) {
+    out += BYTE_TO_HEX[bytes[i]];
+  }
+  return out;
+}
+
+const TEXT_INSPECT_EXTENSIONS = new Set([
+  'txt', 'md', 'csv', 'tsv', 'json', 'yaml', 'yml', 'xml', 'html', 'htm',
+  'sql', 'env', 'log', 'rtf', 'ini', 'conf', 'cfg', 'ts', 'tsx', 'js',
+  'jsx', 'py', 'sh', 'bat', 'php', 'go', 'rs', 'java', 'c', 'cpp',
+  'css', 'scss', 'pem', 'key', 'gml', 'kml', 'geojson', 'topojson',
+]);
 
 // -----------------------------------------------------------------
 // 1. FAST CRYPTOGRAPHIC & CONTENT HASH SIMULATION
 // -----------------------------------------------------------------
 export async function computeFileHash(file: VirtualFile): Promise<string> {
-  // If actual blob content is available, hash sample bytes
+  // If actual blob content is available, hash 64KB sample bytes
   if (file.content instanceof Blob) {
     try {
-      const slice = file.content.slice(0, 65536); // Sample first 64KB for speed
+      const slice = file.content.slice(0, 65536);
       const buffer = await slice.arrayBuffer();
       const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+      return digestBufferToHex32(hashBuffer);
     } catch {
       // Fallback
     }
@@ -34,10 +53,9 @@ export async function computeFileHash(file: VirtualFile): Promise<string> {
 
   if (typeof file.content === 'string' && file.content.length > 0) {
     const encoder = new TextEncoder();
-    const data = encoder.encode(file.content);
+    const data = encoder.encode(file.content.slice(0, 65536));
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+    return digestBufferToHex32(hashBuffer);
   }
 
   // Deterministic simulation based on size and name signature
@@ -53,24 +71,42 @@ export async function computeFileHash(file: VirtualFile): Promise<string> {
 export async function detectDuplicates(files: VirtualFile[]): Promise<DuplicateGroup[]> {
   const candidatesBySize = new Map<number, VirtualFile[]>();
 
-  for (const f of files) {
-    const list = candidatesBySize.get(f.size) || [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    let list = candidatesBySize.get(f.size);
+    if (!list) {
+      list = [];
+      candidatesBySize.set(f.size, list);
+    }
     list.push(f);
-    candidatesBySize.set(f.size, list);
   }
 
-  const candidates = Array.from(candidatesBySize.values()).filter((list) => list.length > 1);
+  const flatCandidates: VirtualFile[] = [];
+  for (const list of candidatesBySize.values()) {
+    if (list.length > 1) {
+      for (let i = 0; i < list.length; i++) {
+        flatCandidates.push(list[i]);
+      }
+    }
+  }
+
+  if (flatCandidates.length === 0) return [];
+
   const hashedCandidates = await mapAsyncWithConcurrency(
-    candidates.flat(),
-    8,
+    flatCandidates,
+    24,
     async (file) => ({ file, hash: await computeFileHash(file) })
   );
   const hashMap = new Map<string, VirtualFile[]>();
-  for (const { file, hash } of hashedCandidates) {
+  for (let i = 0; i < hashedCandidates.length; i++) {
+    const { file, hash } = hashedCandidates[i];
     const groupKey = `${hash}_${file.size}`;
-    const list = hashMap.get(groupKey) || [];
+    let list = hashMap.get(groupKey);
+    if (!list) {
+      list = [];
+      hashMap.set(groupKey, list);
+    }
     list.push(file);
-    hashMap.set(groupKey, list);
   }
 
   const duplicates: DuplicateGroup[] = [];
@@ -79,7 +115,7 @@ export async function detectDuplicates(files: VirtualFile[]): Promise<DuplicateG
       const size = list[0].size;
       const totalWastedBytes = size * (list.length - 1);
       duplicates.push({
-        hash: key.split('_')[0],
+        hash: key.slice(0, key.lastIndexOf('_')),
         size,
         files: list,
         totalWastedBytes,
@@ -120,15 +156,17 @@ export async function analyzeFileContentDNA(file: VirtualFile): Promise<Semantic
   const baseName = getFileNameWithoutExtension(file.name);
   let textSample = '';
 
-  if (file.content instanceof Blob) {
-    try {
-      const slice = file.content.slice(0, 8192);
-      textSample = await slice.text();
-    } catch {
-      textSample = '';
+  if (TEXT_INSPECT_EXTENSIONS.has(ext)) {
+    if (file.content instanceof Blob) {
+      try {
+        const slice = file.content.slice(0, 8192);
+        textSample = await slice.text();
+      } catch {
+        textSample = '';
+      }
+    } else if (typeof file.content === 'string') {
+      textSample = file.content.slice(0, 8192);
     }
-  } else if (typeof file.content === 'string') {
-    textSample = file.content.slice(0, 8192);
   }
 
   const combinedContext = `${file.name} ${file.relativePath} ${textSample}`.toLowerCase();
@@ -284,67 +322,82 @@ export async function analyzeFileContentDNA(file: VirtualFile): Promise<Semantic
 // -----------------------------------------------------------------
 // 3. GROUNDBREAKING FEATURE: PRIVACY & SECRET SANITIZATION
 // -----------------------------------------------------------------
+const extractSnippet = (text: string, index: number): string => {
+  const lineStart = text.lastIndexOf('\n', index) + 1;
+  const rawEnd = text.indexOf('\n', index);
+  const lineEnd = rawEnd === -1 ? text.length : rawEnd;
+  return text.slice(lineStart, lineEnd).trim().slice(0, 60);
+};
+
 export async function inspectFilePrivacy(file: VirtualFile): Promise<PrivacyInspectionResult> {
   const secrets: DetectedSecret[] = [];
   const ext = file.extension.toLowerCase();
   let text = '';
 
-  if (file.content instanceof Blob) {
-    try {
-      text = await file.content.text();
-    } catch {
-      text = '';
+  if (TEXT_INSPECT_EXTENSIONS.has(ext)) {
+    if (file.content instanceof Blob) {
+      try {
+        // Cap inspection read at 64KB instead of reading entire multi-MB files
+        text = await file.content.slice(0, 65536).text();
+      } catch {
+        text = '';
+      }
+    } else if (typeof file.content === 'string') {
+      text = file.content.slice(0, 65536);
     }
-  } else if (typeof file.content === 'string') {
-    text = file.content;
   }
 
   if (text) {
-    const lines = text.split('\n');
-    lines.forEach((line) => {
-      // 1. Generic API Keys & Tokens
-      const apiKeyMatch = line.match(/(api[_\-\s]?key|secret|token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{16,})['"]?/i);
-      if (apiKeyMatch) {
-        secrets.push({
-          type: 'api_key',
-          lineText: line.trim().slice(0, 60),
-          match: apiKeyMatch[2].slice(0, 4) + '••••••••',
-          severity: 'critical',
-        });
-      }
+    // 1. Generic API Keys & Tokens
+    const apiKeyRegex = /(api[_\-\s]?key|secret|token)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{16,})['"]?/gi;
+    let match: RegExpExecArray | null;
+    while ((match = apiKeyRegex.exec(text)) !== null) {
+      secrets.push({
+        type: 'api_key',
+        lineText: extractSnippet(text, match.index),
+        match: match[2].slice(0, 4) + '••••••••',
+        severity: 'critical',
+      });
+      if (secrets.length >= 10) break;
+    }
 
-      // 2. AWS Keys
-      const awsMatch = line.match(/(AKIA[0-9A-Z]{16})/);
-      if (awsMatch) {
-        secrets.push({
-          type: 'aws_key',
-          lineText: line.trim().slice(0, 60),
-          match: awsMatch[1].slice(0, 4) + '••••••••',
-          severity: 'critical',
-        });
-      }
+    // 2. AWS Keys
+    const awsRegex = /(AKIA[0-9A-Z]{16})/g;
+    while ((match = awsRegex.exec(text)) !== null) {
+      secrets.push({
+        type: 'aws_key',
+        lineText: extractSnippet(text, match.index),
+        match: match[1].slice(0, 4) + '••••••••',
+        severity: 'critical',
+      });
+      if (secrets.length >= 20) break;
+    }
 
-      // 3. Private RSA/OpenSSH Keys
-      if (line.includes('BEGIN PRIVATE KEY') || line.includes('BEGIN RSA PRIVATE KEY')) {
-        secrets.push({
-          type: 'private_key',
-          lineText: line.trim(),
-          match: 'RSA Private Key Header',
-          severity: 'critical',
-        });
-      }
+    // 3. Private RSA/OpenSSH Keys
+    const privKeyIdx = text.indexOf('BEGIN PRIVATE KEY');
+    const rsaKeyIdx = privKeyIdx === -1 ? text.indexOf('BEGIN RSA PRIVATE KEY') : privKeyIdx;
+    if (rsaKeyIdx !== -1) {
+      secrets.push({
+        type: 'private_key',
+        lineText: extractSnippet(text, rsaKeyIdx),
+        match: 'RSA Private Key Header',
+        severity: 'critical',
+      });
+    }
 
-      // 4. Email PII
-      const emailMatch = line.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/);
-      if (emailMatch && !file.name.endsWith('.md')) {
+    // 4. Email PII
+    if (ext !== 'md') {
+      const emailRegex = /[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/g;
+      while ((match = emailRegex.exec(text)) !== null) {
         secrets.push({
           type: 'email_pii',
-          lineText: line.trim().slice(0, 60),
-          match: emailMatch[0],
+          lineText: extractSnippet(text, match.index),
+          match: match[0],
           severity: 'medium',
         });
+        if (secrets.length >= 25) break;
       }
-    });
+    }
   }
 
   // Simulated EXIF detection for JPG/PNG

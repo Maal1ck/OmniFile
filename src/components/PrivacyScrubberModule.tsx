@@ -32,12 +32,13 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
   const [inspections, setInspections] = useState<PrivacyInspectionResult[]>([]);
   const [inspecting, setInspecting] = useState<boolean>(true);
   const [activeInspect, setActiveInspect] = useState<PrivacyInspectionResult | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState<number>(200);
 
   useEffect(() => {
     let cancelled = false;
     async function inspectAll() {
       setInspecting(true);
-      const results = await mapAsyncWithConcurrency(files, 4, inspectFilePrivacy);
+      const results = await mapAsyncWithConcurrency(files, 24, inspectFilePrivacy);
       if (!cancelled) {
         setInspections(results);
         setInspecting(false);
@@ -48,6 +49,11 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
       cancelled = true;
     };
   }, [files]);
+
+  const visibleInspections = useMemo(
+    () => inspections.slice(0, visibleLimit),
+    [inspections, visibleLimit]
+  );
 
   const flaggedFiles = useMemo(() => {
     return inspections.filter(
@@ -67,38 +73,35 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
     onStartProgress(t.privacy.progressTitle);
     onUpdateProgress(40, t.privacy.progressSub1);
 
+    const inspectionById = new Map(inspections.map((ins) => [ins.file.id, ins]));
+
     const updated = files.map((file) => {
-      const match = inspections.find((ins) => ins.file.id === file.id);
-      if (match) {
-        if (typeof file.content === 'string') {
-          let scrubbed = file.content;
-          match.detectedSecrets.forEach((sec) => {
-            scrubbed = scrubbed.replace(sec.match, '[REDACTED_SECRET]');
-          });
-          return {
-            ...file,
-            content: scrubbed,
-          };
-        }
+      const match = inspectionById.get(file.id);
+      if (match && typeof file.content === 'string' && match.detectedSecrets.length > 0) {
+        let scrubbed = file.content;
+        match.detectedSecrets.forEach((sec) => {
+          scrubbed = scrubbed.replace(sec.match, '[REDACTED_SECRET]');
+        });
+        return {
+          ...file,
+          content: scrubbed,
+        };
       }
       return file;
     });
 
     onUpdateProgress(90, t.privacy.progressSub2);
-
-    setTimeout(() => {
-      onFinishProgress();
-      onApplySanitizedFiles(updated);
-      setInspections((prev) =>
-        prev.map((ins) => ({
-          ...ins,
-          hasExifLocation: false,
-          cleanableMetadata: [],
-          detectedSecrets: [],
-          sanitized: true,
-        }))
-      );
-    }, 450);
+    onFinishProgress();
+    onApplySanitizedFiles(updated);
+    setInspections((prev) =>
+      prev.map((ins) => ({
+        ...ins,
+        hasExifLocation: false,
+        cleanableMetadata: [],
+        detectedSecrets: [],
+        sanitized: true,
+      }))
+    );
   };
 
   return (
@@ -200,7 +203,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
                   </td>
                 </tr>
               ) : (
-                inspections.map((ins) => {
+                visibleInspections.map((ins) => {
                   const hasIssues =
                     ins.hasExifLocation || ins.detectedSecrets.length > 0 || ins.cleanableMetadata.length > 0;
 
@@ -282,6 +285,17 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
             </tbody>
           </table>
         </div>
+        {visibleInspections.length < inspections.length && (
+          <div className="flex justify-center border-t border-slate-800 p-3">
+            <button
+              type="button"
+              onClick={() => setVisibleLimit((limit) => limit + 200)}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
+            >
+              {t.fileTable.showMore}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Inspect Modal */}

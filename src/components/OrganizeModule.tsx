@@ -64,24 +64,31 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
   const [newRuleExts, setNewRuleExts] = useState('');
   const [newRuleFolder, setNewRuleFolder] = useState('');
   const [showAddRule, setShowAddRule] = useState(false);
+  const [visibleLimit, setVisibleLimit] = useState(200);
 
   const selectedFiles = useMemo(() => {
     const sel = files.filter((f) => f.selected);
     return sel.length > 0 ? sel : files;
   }, [files]);
 
-  const includedTypeFiles = useMemo(
-    () =>
-      selectedFiles.filter(
-        (file) => !config.excludedExtensions.includes(file.extension.toLowerCase())
-      ),
-    [selectedFiles, config.excludedExtensions]
+  const excludedExtSet = useMemo(
+    () => new Set(config.excludedExtensions),
+    [config.excludedExtensions]
   );
 
-  // Detected geospatial & complementary bundles
-  const detectedBundles = useMemo(() => {
-    return analyzeComplementaryBundles(includedTypeFiles).bundles;
+  const includedTypeFiles = useMemo(
+    () =>
+      excludedExtSet.size === 0
+        ? selectedFiles
+        : selectedFiles.filter((file) => !excludedExtSet.has(file.extension.toLowerCase())),
+    [selectedFiles, excludedExtSet]
+  );
+
+  // Detected geospatial & complementary bundles (computed once and shared with computeSmartOrganization)
+  const bundleAnalysis = useMemo(() => {
+    return analyzeComplementaryBundles(includedTypeFiles);
   }, [includedTypeFiles]);
+  const detectedBundles = bundleAnalysis.bundles;
 
   const bundledFileCount = useMemo(
     () => detectedBundles.reduce((sum, b) => sum + b.files.length, 0),
@@ -90,8 +97,13 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
 
   // Compute live mapping
   const previewResults = useMemo(() => {
-    return computeSmartOrganization(includedTypeFiles, config);
-  }, [includedTypeFiles, config]);
+    return computeSmartOrganization(includedTypeFiles, config, bundleAnalysis);
+  }, [includedTypeFiles, config, bundleAnalysis]);
+
+  const visibleResults = useMemo(
+    () => previewResults.slice(0, visibleLimit),
+    [previewResults, visibleLimit]
+  );
 
   const extensionChoices = useMemo(() => {
     const counts = new Map<string, number>();
@@ -110,9 +122,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
     () => previewResults.filter((result) => result.included),
     [previewResults]
   );
-  const excludedTypeCount = selectedFiles.filter((file) =>
-    config.excludedExtensions.includes(file.extension.toLowerCase())
-  ).length;
+  const excludedTypeCount = selectedFiles.length - includedTypeFiles.length;
 
   // Folder clusters summary
   const destinationFolders = useMemo(() => {
@@ -124,8 +134,9 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
   }, [includedResults]);
 
   const handleApplyToWorkspace = () => {
+    const resultById = new Map(includedResults.map((r) => [r.file.id, r]));
     const updated = files.map((file) => {
-      const match = includedResults.find((r) => r.file.id === file.id);
+      const match = resultById.get(file.id);
       if (match) {
         return {
           ...file,
@@ -620,8 +631,8 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
                   </td>
                 </tr>
               ) : (
-                previewResults.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                visibleResults.map((item) => (
+                  <tr key={item.file.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
                       {item.originalPath}
                     </td>
@@ -652,6 +663,17 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             </tbody>
           </table>
         </div>
+        {visibleResults.length < previewResults.length && (
+          <div className="flex justify-center border-t border-slate-800 p-3">
+            <button
+              type="button"
+              onClick={() => setVisibleLimit((limit) => limit + 200)}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
+            >
+              {t.fileTable.showMore}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

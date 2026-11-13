@@ -31,6 +31,7 @@ export const DeduplicationModule: React.FC<DeduplicationModuleProps> = ({
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
   const [scanning, setScanning] = useState<boolean>(true);
   const [actionStrategy, setActionStrategy] = useState<DuplicateAction>('keep_newest');
+  const [visibleLimit, setVisibleLimit] = useState<number>(100);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +57,11 @@ export const DeduplicationModule: React.FC<DeduplicationModuleProps> = ({
     return duplicateGroups.reduce((acc, g) => acc + (g.files.length - 1), 0);
   }, [duplicateGroups]);
 
+  const visibleGroups = useMemo(
+    () => duplicateGroups.slice(0, visibleLimit),
+    [duplicateGroups, visibleLimit]
+  );
+
   const handleExecuteDeduplication = () => {
     if (duplicateGroups.length === 0) return;
 
@@ -73,10 +79,8 @@ export const DeduplicationModule: React.FC<DeduplicationModuleProps> = ({
 
     const remaining = files.filter((f) => !trashedIds.has(f.id));
 
-    setTimeout(() => {
-      onFinishProgress();
-      onApplyDeduplication(remaining);
-    }, 400);
+    onFinishProgress();
+    onApplyDeduplication(remaining);
   };
 
   return (
@@ -183,77 +187,90 @@ export const DeduplicationModule: React.FC<DeduplicationModuleProps> = ({
             <p className="text-xs text-slate-400 mt-1">{t.dedup.zeroDupDesc}</p>
           </div>
         ) : (
-          duplicateGroups.map((group, gIdx) => {
-            const { keepFile } = resolveDuplicateSet(group, actionStrategy);
+          <>
+            {visibleGroups.map((group, gIdx) => {
+              const { keepFile } = resolveDuplicateSet(group, actionStrategy);
 
-            return (
-              <div
-                key={gIdx}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm space-y-3"
-              >
-                <div className="flex items-center justify-between text-xs pb-3 border-b border-slate-850">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[11px] text-cyan-400 font-semibold">
-                      {group.hash}
-                    </span>
-                    <span className="text-slate-500">·</span>
-                    <span className="font-mono tabular-nums text-slate-300">
-                      {formatBytes(group.size)} {t.dedup.each}
-                    </span>
-                    <span className="text-slate-500">·</span>
-                    <span className="text-rose-400 font-mono tabular-nums font-semibold">
-                      +{formatBytes(group.totalWastedBytes)} {t.dedup.wasted}
+              return (
+                <div
+                  key={`${group.hash}_${group.size}_${gIdx}`}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm space-y-3"
+                >
+                  <div className="flex items-center justify-between text-xs pb-3 border-b border-slate-850">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-cyan-400 font-semibold">
+                        {group.hash}
+                      </span>
+                      <span className="text-slate-500">·</span>
+                      <span className="font-mono tabular-nums text-slate-300">
+                        {formatBytes(group.size)} {t.dedup.each}
+                      </span>
+                      <span className="text-slate-500">·</span>
+                      <span className="text-rose-400 font-mono tabular-nums font-semibold">
+                        +{formatBytes(group.totalWastedBytes)} {t.dedup.wasted}
+                      </span>
+                    </div>
+
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {t.dedup.identicalCopies(group.files.length)}
                     </span>
                   </div>
 
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    {t.dedup.identicalCopies(group.files.length)}
-                  </span>
-                </div>
+                  <div className="space-y-1.5">
+                    {group.files.map((file) => {
+                      const isRetained = file.id === keepFile.id;
 
-                <div className="space-y-1.5">
-                  {group.files.map((file) => {
-                    const isRetained = file.id === keepFile.id;
-
-                    return (
-                      <div
-                        key={file.id}
-                        className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-mono transition-colors ${
-                          isRetained
-                            ? 'bg-emerald-950/20 border border-emerald-900/50 text-emerald-200'
-                            : 'bg-slate-950/60 border border-slate-850 text-slate-400'
-                        }`}
-                      >
-                        <div className="truncate max-w-lg">
-                          <span className={isRetained ? 'font-semibold text-white' : ''}>
-                            {file.name}
-                          </span>
-                          <span className="ml-2 text-[11px] text-slate-500">
-                            ({file.relativePath})
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-3 shrink-0 text-[11px]">
-                          <span className="tabular-nums">
-                            {formatDate(file.lastModified, 'YYYY-MM-DD')}
-                          </span>
-                          {isRetained ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 text-[10px] font-sans font-semibold">
-                              {t.dedup.keepBadge}
+                      return (
+                        <div
+                          key={file.id}
+                          className={`flex items-center justify-between p-2.5 rounded-lg text-xs font-mono transition-colors ${
+                            isRetained
+                              ? 'bg-emerald-950/20 border border-emerald-900/50 text-emerald-200'
+                              : 'bg-slate-950/60 border border-slate-850 text-slate-400'
+                          }`}
+                        >
+                          <div className="truncate max-w-lg">
+                            <span className={isRetained ? 'font-semibold text-white' : ''}>
+                              {file.name}
                             </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-rose-950/40 text-rose-400 text-[10px] font-sans">
-                              {t.dedup.trashBadge}
+                            <span className="ml-2 text-[11px] text-slate-500">
+                              ({file.relativePath})
                             </span>
-                          )}
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0 text-[11px]">
+                            <span className="tabular-nums">
+                              {formatDate(file.lastModified, 'YYYY-MM-DD')}
+                            </span>
+                            {isRetained ? (
+                              <span className="px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 text-[10px] font-sans font-semibold">
+                                {t.dedup.keepBadge}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-rose-950/40 text-rose-400 text-[10px] font-sans">
+                                {t.dedup.trashBadge}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
+              );
+            })}
+            {visibleGroups.length < duplicateGroups.length && (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibleLimit((limit) => limit + 100)}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
+                >
+                  {t.fileTable.showMore}
+                </button>
               </div>
-            );
-          })
+            )}
+          </>
         )}
       </div>
     </div>

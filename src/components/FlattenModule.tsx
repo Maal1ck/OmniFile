@@ -39,6 +39,8 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
     caseHandling: 'preserve',
   });
 
+  const [visibleLimit, setVisibleLimit] = useState(200);
+
   const selectedFiles = useMemo(() => {
     const sel = files.filter((f) => f.selected);
     return sel.length > 0 ? sel : files;
@@ -48,12 +50,18 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
     return computeDirectoryFlattening(selectedFiles, config);
   }, [selectedFiles, config]);
 
+  const visibleResults = useMemo(
+    () => previewResults.slice(0, visibleLimit),
+    [previewResults, visibleLimit]
+  );
+
   const collisionCount = previewResults.filter((r) => r.hasCollision).length;
   const deepFilesCount = previewResults.filter((r) => r.depth > 0).length;
 
   const handleApplyToWorkspace = () => {
+    const resultById = new Map(previewResults.map((r) => [r.file.id, r]));
     const updated = files.map((file) => {
-      const match = previewResults.find((r) => r.file.id === file.id);
+      const match = resultById.get(file.id);
       if (match) {
         return {
           ...file,
@@ -273,8 +281,8 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
                   </td>
                 </tr>
               ) : (
-                previewResults.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                visibleResults.map((item) => (
+                  <tr key={item.file.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
                       {item.originalPath}
                     </td>
@@ -298,6 +306,17 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
             </tbody>
           </table>
         </div>
+        {visibleResults.length < previewResults.length && (
+          <div className="flex justify-center border-t border-slate-800 p-3">
+            <button
+              type="button"
+              onClick={() => setVisibleLimit((limit) => limit + 200)}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
+            >
+              {t.fileTable.showMore}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

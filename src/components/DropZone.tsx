@@ -9,9 +9,8 @@ import {
 import { VirtualFile } from '../types/fileSystem';
 import {
   readFilesFromDataTransfer,
+  readDirectoryHandleFast,
   parseFileList,
-  getFileExtension,
-  classifyFileCategory,
 } from '../utils/fileHelpers';
 import { useAppSettings } from '../context/AppSettingsContext';
 
@@ -116,66 +115,16 @@ export const DropZone: React.FC<DropZoneProps> = ({
           onStartProgress(t.dropzone.ingestingDir(dirHandle.name));
         }
 
-        const gatheredFiles: VirtualFile[] = [];
-        let count = 0;
-        let lastReport = 0;
-
-        const processHandleQueue = async (
-          handles: { handle: FileSystemDirectoryHandle; path: string }[]
-        ) => {
-          while (handles.length > 0) {
-            const current = handles.shift();
-            if (!current) break;
-
-            const subHandles: { handle: FileSystemDirectoryHandle; path: string }[] = [];
-            const filePromises: Promise<void>[] = [];
-
-            for await (const entry of (current.handle as any).values()) {
-              if (entry.kind === 'file') {
-                const fileHandle = entry as unknown as FileSystemFileHandle;
-                filePromises.push(
-                  fileHandle.getFile().then((file) => {
-                    count++;
-                    const now = performance.now();
-                    if (now - lastReport > 60) {
-                      lastReport = now;
-                      onUpdateProgress?.(
-                        Math.min(98, Math.round((count / (count + 10)) * 100)),
-                        `${file.name} (${count} ${t.dropzone.filesIndexedSuffix})`
-                      );
-                    }
-                    const relativePath = current.path ? `${current.path}/${file.name}` : file.name;
-                    const ext = getFileExtension(file.name);
-
-                    gatheredFiles.push({
-                      id: `native-${Date.now()}-${count}-${Math.random().toString(36).slice(2, 6)}`,
-                      name: file.name,
-                      relativePath,
-                      size: file.size,
-                      type: file.type,
-                      extension: ext,
-                      lastModified: file.lastModified,
-                      category: classifyFileCategory(ext, file.name),
-                      selected: true,
-                      content: file,
-                    });
-                  })
-                );
-              } else if (entry.kind === 'directory') {
-                const subDirHandle = entry as unknown as FileSystemDirectoryHandle;
-                const newPath = current.path ? `${current.path}/${entry.name}` : entry.name;
-                subHandles.push({ handle: subDirHandle, path: newPath });
-              }
-            }
-
-            await Promise.all(filePromises);
-            for (const sub of subHandles) {
-              handles.push(sub);
-            }
+        const gatheredFiles = await readDirectoryHandleFast(
+          dirHandle,
+          (percent, currentItem, count) => {
+            onUpdateProgress?.(
+              percent,
+              `${currentItem} (${count} ${t.dropzone.filesIndexedSuffix})`
+            );
           }
-        };
+        );
 
-        await processHandleQueue([{ handle: dirHandle, path: dirHandle.name }]);
         if (gatheredFiles.length > 0) {
           onFilesAdded(gatheredFiles);
         }

@@ -10,6 +10,7 @@ import { VirtualFile, RenameConfig, RenameMode } from '../types/fileSystem';
 import {
   computeBatchRename,
   createZipArchive,
+  getFileExtension,
   triggerFileDownload,
 } from '../utils/fileHelpers';
 import { useAppSettings } from '../context/AppSettingsContext';
@@ -51,6 +52,8 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
     collisionResolution: 'number_suffix',
   });
 
+  const [visibleLimit, setVisibleLimit] = useState(200);
+
   const selectedFiles = useMemo(() => {
     const sel = files.filter((f) => f.selected);
     return sel.length > 0 ? sel : files;
@@ -61,18 +64,24 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
     return computeBatchRename(selectedFiles, config);
   }, [selectedFiles, config]);
 
+  const visibleResults = useMemo(
+    () => previewResults.slice(0, visibleLimit),
+    [previewResults, visibleLimit]
+  );
+
   const modifiedCount = previewResults.filter((r) => r.isModified).length;
   const collisionCount = previewResults.filter((r) => r.hasCollision).length;
 
   const handleApplyToWorkspace = () => {
+    const resultById = new Map(previewResults.map((r) => [r.file.id, r]));
     const updated = files.map((file) => {
-      const match = previewResults.find((r) => r.file.id === file.id);
+      const match = resultById.get(file.id);
       if (match && match.isModified) {
         return {
           ...file,
           name: match.collisionResolvedName,
           relativePath: match.targetPath,
-          extension: match.collisionResolvedName.split('.').pop() || '',
+          extension: getFileExtension(match.collisionResolvedName),
         };
       }
       return file;
@@ -466,9 +475,9 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                   </td>
                 </tr>
               ) : (
-                previewResults.map((item, idx) => (
+                visibleResults.map((item) => (
                   <tr
-                    key={idx}
+                    key={item.file.id}
                     className={`hover:bg-slate-800/30 transition-colors ${
                       item.isModified ? 'bg-cyan-950/10' : ''
                     }`}
@@ -499,6 +508,17 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
             </tbody>
           </table>
         </div>
+        {visibleResults.length < previewResults.length && (
+          <div className="flex justify-center border-t border-slate-800 p-3">
+            <button
+              type="button"
+              onClick={() => setVisibleLimit((limit) => limit + 200)}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
+            >
+              {t.fileTable.showMore}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

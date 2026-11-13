@@ -129,7 +129,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
         const file = syncBatch[i];
         const percent = Math.round(((i + 1) / syncBatch.length) * 100);
         onUpdateProgress(percent, t.cloud.syncingItem(file.name));
-        await new Promise((r) => setTimeout(r, 220));
+        await new Promise((r) => setTimeout(r, 15));
       }
 
       const newLogs: SyncLogItem[] = syncBatch.slice(0, 3).map((f, idx) => ({
