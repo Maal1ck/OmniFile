@@ -7,10 +7,7 @@ import {
   Copy,
   Check,
   ShieldCheck,
-  ChevronRight,
-  ExternalLink,
   FolderArchive,
-  Layers,
 } from 'lucide-react';
 import {
   generateWindowsBatchLauncher,
@@ -20,6 +17,7 @@ import {
 } from '../utils/windowsPackager';
 import { triggerFileDownload } from '../utils/fileHelpers';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface WindowsPackagingModalProps {
   isOpen: boolean;
@@ -30,6 +28,7 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useAppSettings();
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'pwa' | 'batch' | 'electron' | 'inno'>('pwa');
@@ -76,12 +75,8 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
               <Laptop className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white tracking-tight">
-                Windows Executable & Desktop Deployment Hub
-              </h3>
-              <p className="text-xs text-slate-400">
-                Run OmniFile as an independent, native Windows app or compile into a standalone <code className="text-cyan-400 font-mono">.exe</code> installer.
-              </p>
+              <h3 className="text-lg font-bold text-white tracking-tight">{t.packager.title}</h3>
+              <p className="text-xs text-slate-400">{t.packager.subtitle}</p>
             </div>
           </div>
 
@@ -95,22 +90,17 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
 
         {/* Navigation Tabs */}
         <div className="px-6 pt-4 border-b border-slate-800 bg-slate-950/40 flex items-center gap-2 overflow-x-auto text-xs">
-          {[
-            { id: 'pwa', label: '1. Windows Taskbar App (Instant)' },
-            { id: 'batch', label: '2. Batch Launcher (.bat / .ps1)' },
-            { id: 'electron', label: '3. Compile .EXE (Electron)' },
-            { id: 'inno', label: '4. Inno Setup Wizard (.iss)' },
-          ].map((tab) => (
+          {(['pwa', 'batch', 'electron', 'inno'] as const).map((tabId) => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              key={tabId}
+              onClick={() => setActiveTab(tabId)}
               className={`px-3 py-2 rounded-t-lg font-medium transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
-                activeTab === tab.id
+                activeTab === tabId
                   ? 'border-cyan-400 text-cyan-300 bg-slate-900'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              {tab.label}
+              {t.packager.tabs[tabId]}
             </button>
           ))}
         </div>
@@ -122,12 +112,8 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
               <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-semibold text-slate-100 text-sm">
-                    Direct Windows Desktop PWA (Recommended for Speed)
-                  </h4>
-                  <p className="text-slate-400 mt-1 leading-relaxed">
-                    Modern Windows 10 & 11 (via Microsoft Edge or Chrome) allows web apps to install natively as isolated desktop applications with full local disk access, dedicated taskbar pins, and offline cache.
-                  </p>
+                  <h4 className="font-semibold text-slate-100 text-sm">{t.packager.pwaTitle}</h4>
+                  <p className="text-slate-400 mt-1 leading-relaxed">{t.packager.pwaDesc}</p>
                 </div>
               </div>
 
@@ -138,20 +124,20 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
                     className="w-full sm:w-auto px-6 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Install to Windows Now</span>
+                    <span>{t.packager.installNow}</span>
                   </button>
                 ) : isInstalled ? (
                   <div className="px-4 py-2 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-lg flex items-center gap-2 font-medium">
                     <Check className="w-4 h-4" />
-                    <span>OmniFile is currently installed on this PC</span>
+                    <span>{t.packager.installedNote}</span>
                   </div>
                 ) : (
                   <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-slate-400 leading-relaxed">
-                    <span className="font-semibold text-slate-200">How to install manually in Microsoft Edge / Chrome:</span>
+                    <span className="font-semibold text-slate-200">{t.packager.manualTitle}</span>
                     <ol className="list-decimal ml-4 mt-1.5 space-y-1 text-slate-400">
-                      <li>Click the <strong>App Available</strong> icon in the right side of the address bar.</li>
-                      <li>Or click <strong>Settings (···) → Apps → Install this site as an app</strong>.</li>
-                      <li>Check <strong>"Pin to taskbar"</strong> and <strong>"Create Desktop shortcut"</strong>!</li>
+                      <li>{t.packager.manualStep1}</li>
+                      <li>{t.packager.manualStep2}</li>
+                      <li>{t.packager.manualStep3}</li>
                     </ol>
                   </div>
                 )}
@@ -161,9 +147,7 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
 
           {activeTab === 'batch' && (
             <div className="space-y-4">
-              <p className="text-slate-400 leading-relaxed">
-                Download a native Windows launcher that runs OmniFile in a standalone window (using the standard <code className="text-cyan-400 font-mono">--app</code> flag) without browser tabs, address bars, or extensions:
-              </p>
+              <p className="text-slate-400 leading-relaxed">{t.packager.batchDesc}</p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
@@ -176,9 +160,7 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
                       <Terminal className="w-4 h-4 text-cyan-400" />
                       <span>Launch-OmniFile.bat</span>
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Double-click to open standalone desktop window
-                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">{t.packager.batDesc}</div>
                   </div>
                   <Download className="w-4 h-4 text-slate-400" />
                 </button>
@@ -193,26 +175,27 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
                       <FileCode className="w-4 h-4 text-blue-400" />
                       <span>Install-Desktop-Shortcut.ps1</span>
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Creates Desktop & Start Menu shortcuts
-                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">{t.packager.ps1Desc}</div>
                   </div>
                   <Download className="w-4 h-4 text-slate-400" />
                 </button>
               </div>
 
-              {/* Script Code Preview */}
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-[11px] overflow-x-auto relative">
                 <div className="flex justify-between items-center pb-2 mb-2 border-b border-slate-850 text-slate-500">
-                  <span>Batch launcher contents:</span>
+                  <span>{t.packager.batchPreview}</span>
                   <button
                     onClick={() =>
                       copyToClipboard(generateWindowsBatchLauncher(currentUrl), 'bat')
                     }
                     className="flex items-center gap-1 text-slate-400 hover:text-slate-200 cursor-pointer"
                   >
-                    {copiedKey === 'bat' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedKey === 'bat' ? 'Copied' : 'Copy'}</span>
+                    {copiedKey === 'bat' ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                    <span>{copiedKey === 'bat' ? t.packager.copied : t.packager.copy}</span>
                   </button>
                 </div>
                 <pre className="text-slate-400 leading-tight">
@@ -227,11 +210,9 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
               <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl">
                 <div className="flex items-center gap-2 text-cyan-400 font-semibold mb-1">
                   <FolderArchive className="w-4 h-4" />
-                  <span>Electron Builder Windows .EXE Package</span>
+                  <span>{t.packager.electronTitle}</span>
                 </div>
-                <p className="text-slate-400 leading-relaxed text-xs">
-                  Generate a complete source bundle pre-configured with <code className="text-cyan-400 font-mono">electron-builder</code> to produce a native Windows NSIS installer (<code className="text-cyan-400 font-mono">OmniFile-Setup-1.0.0.exe</code>).
-                </p>
+                <p className="text-slate-400 leading-relaxed text-xs">{t.packager.electronDesc}</p>
               </div>
 
               <button
@@ -240,17 +221,17 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
                 className="w-full sm:w-auto px-6 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
               >
                 <Download className="w-4 h-4" />
-                <span>Download OmniFile-Windows-Executable-Bundle.zip</span>
+                <span>{t.packager.downloadElectron}</span>
               </button>
 
               <div className="space-y-2 pt-2">
-                <div className="font-semibold text-slate-200 text-xs">Compilation commands on Windows:</div>
+                <div className="font-semibold text-slate-200 text-xs">{t.packager.compileCmds}</div>
                 <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 font-mono text-xs text-slate-300 space-y-1">
-                  <div>1. Extract the downloaded ZIP archive</div>
+                  <div>{t.packager.extractStep}</div>
                   <div>2. <span className="text-cyan-400">npm install</span></div>
                   <div>3. <span className="text-cyan-400">npm run build:exe</span></div>
                   <div className="text-emerald-400 text-[11px] pt-1">
-                    Output: dist-exe/OmniFile-Desktop-Setup-1.0.0.exe
+                    Output: dist-exe/OmniFile-Desktop-by-Maodo-Setup-1.0.0.exe
                   </div>
                 </div>
               </div>
@@ -259,9 +240,7 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
 
           {activeTab === 'inno' && (
             <div className="space-y-4">
-              <p className="text-slate-400 leading-relaxed">
-                If you already have Inno Setup on Windows, download our compiled setup script (<code className="text-cyan-400 font-mono">.iss</code>) to produce a traditional wizard installer with license, program files registration, and automatic uninstaller:
-              </p>
+              <p className="text-slate-400 leading-relaxed">{t.packager.innoDesc}</p>
 
               <button
                 type="button"
@@ -269,23 +248,25 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
                 className="px-4 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer flex items-center gap-2"
               >
                 <Download className="w-4 h-4 text-cyan-400" />
-                <span>Download OmniFile-InnoSetup.iss</span>
+                <span>{t.packager.downloadInno}</span>
               </button>
 
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-[11px] overflow-x-auto">
                 <div className="flex justify-between items-center pb-2 mb-2 border-b border-slate-850 text-slate-500">
-                  <span>Inno Setup Script:</span>
+                  <span>{t.packager.innoPreview}</span>
                   <button
                     onClick={() => copyToClipboard(generateInnoSetupScript(), 'inno')}
                     className="flex items-center gap-1 text-slate-400 hover:text-slate-200 cursor-pointer"
                   >
-                    {copiedKey === 'inno' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedKey === 'inno' ? 'Copied' : 'Copy'}</span>
+                    {copiedKey === 'inno' ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                    <span>{copiedKey === 'inno' ? t.packager.copied : t.packager.copy}</span>
                   </button>
                 </div>
-                <pre className="text-slate-400 leading-tight">
-                  {generateInnoSetupScript()}
-                </pre>
+                <pre className="text-slate-400 leading-tight">{generateInnoSetupScript()}</pre>
               </div>
             </div>
           )}
@@ -293,13 +274,13 @@ export const WindowsPackagingModal: React.FC<WindowsPackagingModalProps> = ({
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-500">
-          <span>Targeting Windows 10 & 11 x64 architecture</span>
+          <span>{t.packager.footerNote}</span>
           <button
             type="button"
             onClick={onClose}
             className="px-4 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
           >
-            Close
+            {t.packager.close}
           </button>
         </div>
       </div>

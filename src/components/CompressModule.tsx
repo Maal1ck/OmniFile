@@ -17,6 +17,7 @@ import {
   getFileExtension,
   classifyFileCategory,
 } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface CompressModuleProps {
   files: VirtualFile[];
@@ -33,6 +34,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t } = useAppSettings();
   const [config, setConfig] = useState<CompressConfig>({
     archiveName: `OmniFile_Archive_${new Date().toISOString().slice(0, 10)}`,
     archiveMode: 'single',
@@ -48,24 +50,24 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
   >([]);
   const [inspectedZipName, setInspectedZipName] = useState<string>('');
   const [inspectedZipFiles, setInspectedZipFiles] = useState<VirtualFile[]>([]);
+  const [zipError, setZipError] = useState<string | null>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const selectedFiles = files.filter((f) => f.selected);
   const targetFiles = selectedFiles.length > 0 ? selectedFiles : files;
   const totalUncompressedSize = targetFiles.reduce((acc, f) => acc + f.size, 0);
 
-  // Compression level descriptions
   const getLevelLabel = (lvl: number) => {
-    if (lvl === 0) return 'Level 0: Store (Fastest, zero compression)';
-    if (lvl <= 3) return `Level ${lvl}: Fast Compression`;
-    if (lvl <= 6) return `Level ${lvl}: Balanced Deflate (Standard)`;
-    return `Level ${lvl}: Maximum Compression (Compact file)`;
+    if (lvl === 0) return t.compress.lvlStore;
+    if (lvl <= 3) return t.compress.lvlFast(lvl);
+    if (lvl <= 6) return t.compress.lvlBalanced(lvl);
+    return t.compress.lvlMax(lvl);
   };
 
   const handleCreateZip = async () => {
     if (targetFiles.length === 0) return;
 
-    onStartProgress('Compressing selected files into ZIP archive...');
+    onStartProgress(t.compress.progress);
 
     try {
       if (config.archiveMode === 'single') {
@@ -90,7 +92,6 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
 
         triggerFileDownload(zipBlob, cleanArchiveName);
       } else {
-        // Individual archives per file
         for (let i = 0; i < targetFiles.length; i++) {
           const file = targetFiles[i];
           const progressPercent = Math.round(((i + 1) / targetFiles.length) * 100);
@@ -103,7 +104,6 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
 
           const base = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
           triggerFileDownload(singleBlob, `${base}.zip`);
-          // Brief pause between multiple downloads
           await new Promise((r) => setTimeout(r, 200));
         }
       }
@@ -112,11 +112,11 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
     }
   };
 
-  // Inspect & Extract external ZIP
   const handleInspectZipFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setZipError(null);
     setInspectingZip(true);
     setInspectedZipName(file.name);
 
@@ -144,7 +144,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
             type: blob.type,
             extension: ext,
             lastModified: zipEntry.date ? zipEntry.date.getTime() : Date.now(),
-            category: classifyFileCategory(ext),
+            category: classifyFileCategory(ext, zipEntry.name),
             selected: true,
             content: blob,
           });
@@ -154,7 +154,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
       setInspectedItems(items);
       setInspectedZipFiles(extractedVirtualFiles);
     } catch {
-      alert('Could not inspect the selected file as a valid ZIP archive.');
+      setZipError(t.compress.invalidZip);
     } finally {
       setInspectingZip(false);
       e.target.value = '';
@@ -178,11 +178,9 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <FolderArchive className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-white tracking-tight">ZIP Compression & Archiving</h2>
+              <h2 className="text-lg font-bold text-white tracking-tight">{t.compress.title}</h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Package multiple files and nested directories into compressed standard `.zip` archives.
-            </p>
+            <p className="text-xs text-slate-400 mt-1">{t.compress.subtitle}</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -193,7 +191,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
               className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 rounded-lg transition-all cursor-pointer shadow-sm"
             >
               <Download className="w-4 h-4" />
-              <span>Create & Download ZIP</span>
+              <span>{t.compress.createBtn}</span>
             </button>
           </div>
         </div>
@@ -203,7 +201,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
           <div className="space-y-4">
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Archive Output Filename
+                {t.compress.outputFilename}
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -217,7 +215,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-2">Archive Mode</label>
+              <label className="text-xs font-semibold text-slate-300 block mb-2">{t.compress.archiveMode}</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -229,8 +227,8 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                   }`}
                 >
                   <PackageCheck className="w-4 h-4 text-cyan-400 mb-1" />
-                  <div className="font-semibold text-slate-200">Single Master Archive</div>
-                  <div className="text-[11px] text-slate-500">All files bundled in one .zip</div>
+                  <div className="font-semibold text-slate-200">{t.compress.singleMaster}</div>
+                  <div className="text-[11px] text-slate-500">{t.compress.singleMasterDesc}</div>
                 </button>
 
                 <button
@@ -243,8 +241,8 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                   }`}
                 >
                   <FolderArchive className="w-4 h-4 text-cyan-400 mb-1" />
-                  <div className="font-semibold text-slate-200">Individual Archives</div>
-                  <div className="text-[11px] text-slate-500">Compress each file separately</div>
+                  <div className="font-semibold text-slate-200">{t.compress.individualArchives}</div>
+                  <div className="text-[11px] text-slate-500">{t.compress.individualArchivesDesc}</div>
                 </button>
               </div>
             </div>
@@ -253,7 +251,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
           <div className="space-y-4">
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-300">Compression Level</label>
+                <label className="text-xs font-semibold text-slate-300">{t.compress.compressionLevel}</label>
                 <span className="text-[11px] font-mono text-cyan-400">{getLevelLabel(config.compressionLevel)}</span>
               </div>
               <input
@@ -265,10 +263,10 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                 className="w-full accent-cyan-400 cursor-pointer"
               />
               <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
-                <span>0 (Fast Store)</span>
-                <span>3 (Fast)</span>
-                <span>6 (Standard)</span>
-                <span>9 (Max Deflate)</span>
+                <span>{t.compress.scale0}</span>
+                <span>{t.compress.scale3}</span>
+                <span>{t.compress.scale6}</span>
+                <span>{t.compress.scale9}</span>
               </div>
             </div>
 
@@ -282,7 +280,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                   }
                   className="rounded border-slate-700 text-cyan-500 focus:ring-0"
                 />
-                <span>Preserve nested directory structure in archive</span>
+                <span>{t.compress.preserveDirs}</span>
               </label>
 
               <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -292,7 +290,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                   onChange={(e) => setConfig({ ...config, includeRootFolder: e.target.checked })}
                   className="rounded border-slate-700 text-cyan-500 focus:ring-0"
                 />
-                <span>Nest everything inside a root folder:</span>
+                <span>{t.compress.nestRoot}</span>
               </label>
 
               {config.includeRootFolder && (
@@ -300,7 +298,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                   type="text"
                   value={config.rootFolderName}
                   onChange={(e) => setConfig({ ...config, rootFolderName: e.target.value })}
-                  placeholder="e.g. project_export"
+                  placeholder="project_export"
                   className="w-full bg-slate-950 border border-slate-800 text-slate-100 font-mono text-xs rounded-lg px-3 py-1.5 ml-6"
                 />
               )}
@@ -313,21 +311,22 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <FileCheck className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="font-mono tabular-nums text-slate-200">{targetFiles.length} files</span> targeted
+              <span className="font-mono tabular-nums text-slate-200">
+                {targetFiles.length} {t.filesCount}
+              </span>{' '}
+              {t.compress.targeted}
             </span>
             <span aria-hidden="true">·</span>
             <span className="flex items-center gap-1.5">
               <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-              <span>Uncompressed:</span>
+              <span>{t.compress.uncompressed}</span>
               <span className="font-mono tabular-nums text-slate-200">
                 {formatBytes(totalUncompressedSize)}
               </span>
             </span>
           </div>
 
-          <div className="text-[11px] text-slate-500">
-            Powered by WebAssembly JSZip engine
-          </div>
+          <div className="text-[11px] text-slate-500">{t.compress.engineNote}</div>
         </div>
       </div>
 
@@ -336,7 +335,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2">
             <FolderInput className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-bold text-white tracking-tight">ZIP Archive Inspector & Extractor</h3>
+            <h3 className="text-sm font-bold text-white tracking-tight">{t.compress.inspectorTitle}</h3>
           </div>
 
           <div>
@@ -352,20 +351,25 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
               onClick={() => zipInputRef.current?.click()}
               className="px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
             >
-              Inspect Existing .ZIP
+              {t.compress.inspectBtn}
             </button>
           </div>
         </div>
 
-        {inspectingZip ? (
-          <div className="py-8 text-center text-xs text-slate-400">
-            Reading and parsing ZIP archive headers...
+        {zipError && (
+          <div className="mt-4 p-3 rounded-lg bg-rose-950/40 border border-rose-800 text-xs text-rose-300">
+            {zipError}
           </div>
+        )}
+
+        {inspectingZip ? (
+          <div className="py-8 text-center text-xs text-slate-400">{t.compress.parsingZip}</div>
         ) : inspectedItems.length > 0 ? (
           <div className="pt-4 space-y-4">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-300 font-medium">
-                Contents of <span className="font-mono text-cyan-400">{inspectedZipName}</span> ({inspectedItems.length} entries)
+                {t.compress.contentsOf} <span className="font-mono text-cyan-400">{inspectedZipName}</span> (
+                {inspectedItems.length} {t.compress.entries})
               </span>
               <button
                 type="button"
@@ -373,7 +377,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-md transition-colors cursor-pointer"
               >
                 <FolderTree className="w-3.5 h-3.5" />
-                <span>Import {inspectedZipFiles.length} Files to Active Workspace</span>
+                <span>{t.compress.importBtn(inspectedZipFiles.length)}</span>
               </button>
             </div>
 
@@ -389,9 +393,7 @@ export const CompressModule: React.FC<CompressModuleProps> = ({
             </div>
           </div>
         ) : (
-          <div className="py-6 text-center text-xs text-slate-500">
-            Drop or select any external `.zip` file from your computer to inspect its structure and extract files into your active workspace.
-          </div>
+          <div className="py-6 text-center text-xs text-slate-500">{t.compress.inspectorEmpty}</div>
         )}
       </div>
     </div>

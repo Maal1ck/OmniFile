@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.omnifile.desktop",
-    "productName": "OmniFile Desktop",
+    "productName": "OmniFile Desktop by Maodo",
     "directories": {
       "output": "dist-exe"
     },

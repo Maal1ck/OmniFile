@@ -50,25 +50,93 @@ export function getFileNameWithoutExtension(filename: string): string {
   return lastDotIndex > 0 ? filename.substring(0, lastDotIndex) : filename;
 }
 
-export function classifyFileCategory(extension: string): FileCategory {
+const COMPOUND_GIS_SUFFIXES = [
+  '.shp.ea.iso.xml',
+  '.shp.iso.xml',
+  '.shp.xml',
+  '.dbf.xml',
+  '.tif.aux.xml',
+  '.tiff.aux.xml',
+  '.jpg.aux.xml',
+  '.jpeg.aux.xml',
+  '.png.aux.xml',
+  '.jp2.aux.xml',
+  '.img.aux.xml',
+  '.ecw.aux.xml',
+  '.sid.aux.xml',
+  '.asc.aux.xml',
+  '.vrt.aux.xml',
+  '.aux.xml',
+  '.tif.vat.dbf',
+  '.tiff.vat.dbf',
+  '.img.vat.dbf',
+  '.vat.dbf',
+  '.tif.ovr',
+  '.tiff.ovr',
+  '.img.ovr',
+  '.ecw.ovr',
+  '.sid.ovr',
+  '.jp2.ovr',
+  '.tif.enp',
+  '.tif.xml',
+  '.tiff.xml',
+  '.img.xml',
+  '.gpkg-wal',
+  '.gpkg-shm',
+];
+
+export const GEOSPATIAL_EXTENSIONS = new Set([
+  // Vector / Shapefile & companions
+  'shp', 'shx', 'dbf', 'prj', 'cpg', 'sbn', 'sbx', 'fbn', 'fbx',
+  'ain', 'aih', 'ixs', 'mxs', 'atx', 'qix', 'fix', 'qpj',
+  'gpkg', 'gpkg-wal', 'gpkg-shm', 'gpx', 'kml', 'kmz',
+  'geojson', 'topojson', 'gml', 'osm', 'pbf', 'fgb',
+  // MapInfo
+  'tab', 'map', 'ind', 'aid', 'wor', 'mif', 'mid',
+  // Georeferenced raster, LiDAR & world/sidecar extensions
+  'geotiff', 'vrt', 'dem', 'grd', 'grib', 'grb', 'nc',
+  'las', 'laz', 'lax', 'bil', 'bip', 'bsq', 'flt', 'asc',
+  'img', 'ige', 'sid', 'ecw', 'jp2', 'ers',
+  'tfw', 'tifw', 'tiffw', 'jgw', 'jpgw', 'jpegw',
+  'pgw', 'pngw', 'j2w', 'jp2w', 'gfw', 'gifw', 'bpw', 'bmpw',
+  'sdw', 'eww', 'wld', 'tfwx', 'jgwx', 'pgwx',
+  'ovr', 'rrd', 'aux', 'hdr', 'stx', 'clr', 'rsc',
+  // GIS Symbology / Project / Metadata
+  'qml', 'sld', 'lyr', 'lyrx', 'qlr', 'mxd',
+]);
+
+export function getEffectiveExtensionToken(filename: string): string {
+  const lower = filename.toLowerCase();
+  for (const suffix of COMPOUND_GIS_SUFFIXES) {
+    if (lower.endsWith(suffix)) {
+      return suffix.slice(1); // without leading dot
+    }
+  }
+  return getFileExtension(filename);
+}
+
+export function classifyFileCategory(extension: string, filename?: string): FileCategory {
   const ext = extension.toLowerCase();
-  
+  const effectiveToken = filename ? getEffectiveExtensionToken(filename) : ext;
+
+  if (
+    filename &&
+    COMPOUND_GIS_SUFFIXES.some((s) => filename.toLowerCase().endsWith(s))
+  ) {
+    return 'geospatial';
+  }
+
   const documents = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'pages', 'md', 'epub'];
   const spreadsheets = [...EXCEL_FILE_EXTENSIONS, 'csv', 'tsv', 'ods', 'numbers'];
-  const images = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff', 'heic', 'raw', 'psd'];
+  const images = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff', 'tif', 'heic', 'raw', 'psd'];
   const audio = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'aiff'];
   const videos = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'm4v'];
   const archives = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso'];
   const code = ['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'scss', 'json', 'yaml', 'yml', 'xml', 'sql', 'sh', 'bat', 'c', 'cpp', 'java', 'go', 'rs', 'php'];
   const presentations = ['ppt', 'pptx', 'key', 'odp'];
   const data = ['sqlite', 'db', 'parquet', 'log', 'dat', 'bak', 'env'];
-  const geospatial = [
-    'shp', 'shx', 'dbf', 'prj', 'cpg', 'qix', 'gpkg', 'gpx', 'kml', 'kmz',
-    'geojson', 'gml', 'vrt', 'dem', 'grd', 'grib', 'nc', 'las', 'laz', 'bil',
-    'img', 'sid', 'jp2', 'osm', 'pbf', 'geotiff',
-  ];
 
-  if (geospatial.includes(ext)) return 'geospatial';
+  if (GEOSPATIAL_EXTENSIONS.has(ext) || GEOSPATIAL_EXTENSIONS.has(effectiveToken)) return 'geospatial';
   if (documents.includes(ext)) return 'documents';
   if (spreadsheets.includes(ext)) return 'spreadsheets';
   if (images.includes(ext)) return 'images';
@@ -373,6 +441,22 @@ export function computeDirectoryFlattening(
   return results;
 }
 
+export type BundleKind =
+  | 'shapefile'
+  | 'mapinfo'
+  | 'georef_raster'
+  | 'geospatial_dataset'
+  | 'complementary_pair';
+
+export interface ComplementaryBundle {
+  id: string;
+  kind: BundleKind;
+  displayName: string;
+  primaryFile: VirtualFile;
+  files: VirtualFile[];
+  isGeospatial: boolean;
+}
+
 export interface OrganizeResult {
   file: VirtualFile;
   originalPath: string;
@@ -382,6 +466,9 @@ export interface OrganizeResult {
   ruleMatched?: string;
   hasCollision: boolean;
   included: boolean;
+  bundleKind?: BundleKind;
+  bundleName?: string;
+  bundleCount?: number;
 }
 
 // Category folder names
@@ -399,25 +486,229 @@ export const CATEGORY_FOLDER_NAMES: Record<FileCategory, string> = {
   other: 'Miscellaneous',
 };
 
+const SHAPEFILE_COMPANIONS = new Set([
+  'shp', 'shx', 'dbf', 'prj', 'cpg', 'sbn', 'sbx', 'fbn', 'fbx',
+  'ain', 'aih', 'ixs', 'mxs', 'atx', 'qix', 'fix', 'qpj',
+  'shp.xml', 'shp.iso.xml', 'shp.ea.iso.xml', 'dbf.xml', 'xml',
+  'qml', 'sld', 'lyr', 'lyrx', 'qlr', 'mxd', 'idx',
+]);
+
+const MAPINFO_COMPANIONS = new Set([
+  'tab', 'dat', 'id', 'map', 'ind', 'aid', 'wor', 'xml', 'qml', 'sld',
+]);
+
+const RASTER_PRIMARIES = new Set([
+  'tif', 'tiff', 'geotiff', 'jpg', 'jpeg', 'png', 'jp2', 'bmp', 'gif',
+  'img', 'ecw', 'sid', 'vrt', 'asc', 'grd', 'dem', 'bil', 'bip', 'bsq',
+  'flt', 'ers', 'nc', 'grib', 'grb',
+]);
+
+const RASTER_SIDECARS = new Set([
+  'tfw', 'tifw', 'tiffw', 'jgw', 'jpgw', 'jpegw', 'pgw', 'pngw', 'j2w', 'jp2w',
+  'gfw', 'gifw', 'bpw', 'bmpw', 'sdw', 'eww', 'wld', 'tfwx', 'jgwx', 'pgwx',
+  'prj', 'qpj', 'aux', 'aux.xml', 'tif.aux.xml', 'tiff.aux.xml', 'jpg.aux.xml',
+  'jpeg.aux.xml', 'png.aux.xml', 'jp2.aux.xml', 'img.aux.xml', 'ecw.aux.xml',
+  'sid.aux.xml', 'asc.aux.xml', 'vrt.aux.xml', 'ovr', 'tif.ovr', 'tiff.ovr',
+  'img.ovr', 'ecw.ovr', 'sid.ovr', 'jp2.ovr', 'rrd', 'hdr', 'stx', 'clr',
+  'rsc', 'ige', 'vat.dbf', 'tif.vat.dbf', 'tiff.vat.dbf', 'img.vat.dbf',
+  'tif.enp', 'tif.xml', 'tiff.xml', 'img.xml', 'xml', 'tab', 'qml', 'sld',
+  'lyr', 'lyrx', 'qlr',
+]);
+
+const VECTOR_GIS_PRIMARIES = new Set([
+  'gpkg', 'geojson', 'topojson', 'kml', 'kmz', 'gml', 'gpx', 'las', 'laz', 'fgb', 'osm', 'pbf',
+]);
+
+const VECTOR_GIS_SIDECARS = new Set([
+  'gpkg-wal', 'gpkg-shm', 'lax', 'prj', 'qpj', 'qml', 'sld', 'lyr', 'lyrx', 'qlr', 'xml', 'aux.xml',
+]);
+
+const GENERIC_SIDECARS = new Set([
+  'xmp', 'srt', 'vtt', 'sub', 'idx', 'nfo', 'cue', 'md5', 'sha256', 'sig', 'meta', 'prj', 'hdr', 'xml',
+]);
+
+function extractDatasetStem(relativePath: string): {
+  dirKey: string;
+  stemKey: string;
+  displayName: string;
+  token: string;
+} {
+  const normalized = relativePath.replace(/\\/g, '/');
+  const slashIdx = normalized.lastIndexOf('/');
+  const dir = slashIdx >= 0 ? normalized.slice(0, slashIdx) : '';
+  const fileName = slashIdx >= 0 ? normalized.slice(slashIdx + 1) : normalized;
+  const lowerName = fileName.toLowerCase();
+
+  for (const suffix of COMPOUND_GIS_SUFFIXES) {
+    if (lowerName.endsWith(suffix)) {
+      const stem = fileName.slice(0, fileName.length - suffix.length);
+      return {
+        dirKey: dir.toLowerCase(),
+        stemKey: stem.toLowerCase(),
+        displayName: stem || fileName,
+        token: suffix.slice(1),
+      };
+    }
+  }
+
+  const lastDot = fileName.lastIndexOf('.');
+  const stem = lastDot > 0 ? fileName.slice(0, lastDot) : fileName;
+  const token = lastDot > 0 ? fileName.slice(lastDot + 1).toLowerCase() : '';
+  return {
+    dirKey: dir.toLowerCase(),
+    stemKey: stem.toLowerCase(),
+    displayName: stem || fileName,
+    token,
+  };
+}
+
+/**
+ * Detects Shapefile sets, MapInfo TAB sets, georeferenced raster + world/aux bundles,
+ * and complementary sidecar pairs sharing the same stem in the same source folder.
+ */
+export function analyzeComplementaryBundles(files: VirtualFile[]): {
+  bundles: ComplementaryBundle[];
+  fileToBundle: Map<string, ComplementaryBundle>;
+} {
+  const groups = new Map<
+    string,
+    { displayName: string; entries: Array<{ file: VirtualFile; token: string }> }
+  >();
+
+  for (const file of files) {
+    const info = extractDatasetStem(file.relativePath || file.name);
+    const key = `${info.dirKey}::${info.stemKey}`;
+    const existing = groups.get(key) || { displayName: info.displayName, entries: [] };
+    existing.entries.push({ file, token: info.token });
+    groups.set(key, existing);
+  }
+
+  const bundles: ComplementaryBundle[] = [];
+  const fileToBundle = new Map<string, ComplementaryBundle>();
+
+  for (const [bundleId, group] of groups.entries()) {
+    if (group.entries.length < 2) continue;
+
+    const tokens = group.entries.map((e) => e.token);
+    const hasShp = tokens.includes('shp');
+    const shapefileSidecarCount = tokens.filter((t) => SHAPEFILE_COMPANIONS.has(t)).length;
+
+    const hasTab = tokens.includes('tab');
+    const hasMapInfoPartner = tokens.some((t) => t !== 'tab' && MAPINFO_COMPANIONS.has(t));
+
+    const rasterEntry = group.entries.find((e) => RASTER_PRIMARIES.has(e.token));
+    const hasRasterSidecar = group.entries.some(
+      (e) => e !== rasterEntry && RASTER_SIDECARS.has(e.token)
+    );
+
+    const vectorGisEntry = group.entries.find((e) => VECTOR_GIS_PRIMARIES.has(e.token));
+    const hasVectorGisSidecar = group.entries.some(
+      (e) => e !== vectorGisEntry && VECTOR_GIS_SIDECARS.has(e.token)
+    );
+
+    let bundle: ComplementaryBundle | null = null;
+
+    if (hasShp || (shapefileSidecarCount >= 2 && tokens.some((t) => ['shx', 'dbf', 'prj', 'qix', 'sbn'].includes(t)))) {
+      const primary =
+        group.entries.find((e) => e.token === 'shp')?.file ||
+        group.entries.find((e) => e.token === 'dbf')?.file ||
+        group.entries[0].file;
+      bundle = {
+        id: bundleId,
+        kind: 'shapefile',
+        displayName: group.displayName,
+        primaryFile: primary,
+        files: group.entries.map((e) => e.file),
+        isGeospatial: true,
+      };
+    } else if (hasTab && hasMapInfoPartner) {
+      const primary = group.entries.find((e) => e.token === 'tab')!.file;
+      bundle = {
+        id: bundleId,
+        kind: 'mapinfo',
+        displayName: group.displayName,
+        primaryFile: primary,
+        files: group.entries.map((e) => e.file),
+        isGeospatial: true,
+      };
+    } else if (rasterEntry && hasRasterSidecar) {
+      bundle = {
+        id: bundleId,
+        kind: 'georef_raster',
+        displayName: group.displayName,
+        primaryFile: rasterEntry.file,
+        files: group.entries.map((e) => e.file),
+        isGeospatial: true,
+      };
+    } else if (vectorGisEntry && hasVectorGisSidecar) {
+      bundle = {
+        id: bundleId,
+        kind: 'geospatial_dataset',
+        displayName: group.displayName,
+        primaryFile: vectorGisEntry.file,
+        files: group.entries.map((e) => e.file),
+        isGeospatial: true,
+      };
+    } else {
+      const sidecarEntries = group.entries.filter((e) => GENERIC_SIDECARS.has(e.token));
+      const primaryEntries = group.entries.filter((e) => !GENERIC_SIDECARS.has(e.token));
+      if (sidecarEntries.length > 0 && primaryEntries.length > 0) {
+        bundle = {
+          id: bundleId,
+          kind: 'complementary_pair',
+          displayName: group.displayName,
+          primaryFile: primaryEntries[0].file,
+          files: group.entries.map((e) => e.file),
+          isGeospatial: false,
+        };
+      }
+    }
+
+    if (bundle) {
+      bundles.push(bundle);
+      bundle.files.forEach((f) => fileToBundle.set(f.id, bundle!));
+    }
+  }
+
+  return { bundles, fileToBundle };
+}
+
 // Compute Smart Document & File Organization preview
 export function computeSmartOrganization(
   files: VirtualFile[],
   config: OrganizeConfig
 ): OrganizeResult[] {
   const usedPaths = new Set<string>();
+  const groupComplementary = config.groupComplementaryFiles !== false;
+  const bundleGeospatialSubfolders = config.bundleGeospatialSubfolders !== false;
 
-  return files.map((file) => {
+  const { fileToBundle } = groupComplementary
+    ? analyzeComplementaryBundles(files)
+    : { fileToBundle: new Map<string, ComplementaryBundle>() };
+
+  // Pre-resolve target folder for each bundle using its primary file so all companions stay together
+  const bundleFolderCache = new Map<
+    string,
+    { targetFolder: string; category: FileCategory; ruleMatched: string }
+  >();
+
+  const resolveStandaloneFolder = (
+    file: VirtualFile,
+    forcedCategory?: FileCategory,
+    allowCustomRules = true
+  ): { targetFolder: string; category: FileCategory; ruleMatched?: string } => {
     const ext = file.extension.toLowerCase();
-    const category = classifyFileCategory(ext);
+    const category = forcedCategory || classifyFileCategory(ext, file.name);
     let targetFolder = '';
     let ruleMatched: string | undefined = undefined;
 
-    // 1. Check custom user rules first
-    const matchedCustom = config.customRules.find((rule) =>
-      rule.extensions.some((e) => e.replace(/^\./, '').toLowerCase() === ext)
-    );
+    const matchedCustom = allowCustomRules
+      ? config.customRules.find((rule) =>
+          rule.extensions.some((e) => e.replace(/^\./, '').toLowerCase() === ext)
+        )
+      : undefined;
 
-    if (EXCEL_FILE_EXTENSIONS.has(ext)) {
+    if (EXCEL_FILE_EXTENSIONS.has(ext) && category !== 'geospatial') {
       targetFolder = 'Excel Files';
       ruleMatched = 'Excel file grouping';
     } else if (matchedCustom) {
@@ -450,6 +741,54 @@ export function computeSmartOrganization(
       }
     }
 
+    return { targetFolder, category, ruleMatched };
+  };
+
+  return files.map((file) => {
+    const bundle = groupComplementary ? fileToBundle.get(file.id) : undefined;
+    let targetFolder = '';
+    let category: FileCategory;
+    let ruleMatched: string | undefined;
+
+    if (bundle) {
+      let cached = bundleFolderCache.get(bundle.id);
+      if (!cached) {
+        if (bundle.isGeospatial) {
+          const base = resolveStandaloneFolder(bundle.primaryFile, 'geospatial', false);
+          const subFolder = bundleGeospatialSubfolders ? `/${bundle.displayName}` : '';
+          const ruleLabel =
+            bundle.kind === 'shapefile'
+              ? `GIS Shapefile (${bundle.files.length} files)`
+              : bundle.kind === 'mapinfo'
+              ? `GIS MapInfo (${bundle.files.length} files)`
+              : bundle.kind === 'georef_raster'
+              ? `Georeferenced Raster (${bundle.files.length} files)`
+              : `GIS Dataset (${bundle.files.length} files)`;
+          cached = {
+            targetFolder: `${base.targetFolder}${subFolder}`,
+            category: 'geospatial',
+            ruleMatched: ruleLabel,
+          };
+        } else {
+          const base = resolveStandaloneFolder(bundle.primaryFile, undefined, true);
+          cached = {
+            targetFolder: base.targetFolder,
+            category: base.category,
+            ruleMatched: base.ruleMatched || `Complementary bundle (${bundle.files.length} files)`,
+          };
+        }
+        bundleFolderCache.set(bundle.id, cached);
+      }
+      targetFolder = cached.targetFolder;
+      category = cached.category;
+      ruleMatched = cached.ruleMatched;
+    } else {
+      const resolved = resolveStandaloneFolder(file);
+      targetFolder = resolved.targetFolder;
+      category = resolved.category;
+      ruleMatched = resolved.ruleMatched;
+    }
+
     // Clean folder path
     targetFolder = targetFolder.replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
     const outputFolderName = config.outputFolderName.trim().replace(/[\\/]/g, '_').replace(/^\.+$/, '');
@@ -457,7 +796,10 @@ export function computeSmartOrganization(
     const folderParts = targetFolder.split('/');
     const folderNamePrefix = config.folderPrefix.replace(/[\\/]/g, '_');
     const folderNameSuffix = config.folderSuffix.replace(/[\\/]/g, '_');
-    folderParts[folderParts.length - 1] = `${folderNamePrefix}${folderParts[folderParts.length - 1]}${folderNameSuffix}`;
+    const targetPrefixIndex = bundle?.isGeospatial && bundleGeospatialSubfolders && folderParts.length > 1
+      ? folderParts.length - 2
+      : folderParts.length - 1;
+    folderParts[targetPrefixIndex] = `${folderNamePrefix}${folderParts[targetPrefixIndex]}${folderNameSuffix}`;
     targetFolder = folderParts.join('/');
 
     let targetPath = `${targetFolder}/${file.name}`;
@@ -488,6 +830,9 @@ export function computeSmartOrganization(
       ruleMatched,
       hasCollision,
       included,
+      bundleKind: bundle?.kind,
+      bundleName: bundle?.displayName,
+      bundleCount: bundle?.files.length,
     };
   });
 }
@@ -597,9 +942,6 @@ export async function readFilesFromDataTransfer(
             reportProgress(realFile.name);
 
             // Infer drive if root path starts with drive letter e.g. "C:/"
-            const driveMatch = relativePath.match(/^([A-Za-z]:)/);
-            const drive = driveMatch ? driveMatch[1].toUpperCase() : 'C:';
-
             files.push({
               id: `file-${Date.now()}-${processedCount}-${Math.random().toString(36).slice(2, 7)}`,
               name: realFile.name,
@@ -608,10 +950,9 @@ export async function readFilesFromDataTransfer(
               type: realFile.type,
               extension: ext,
               lastModified: realFile.lastModified || Date.now(),
-              category: classifyFileCategory(ext),
+              category: classifyFileCategory(ext, realFile.name),
               selected: true,
               content: realFile,
-              drive,
             });
             resolve();
           },
@@ -697,9 +1038,6 @@ export function parseFileList(
       }
     }
 
-    const driveMatch = relativePath.match(/^([A-Za-z]:)/);
-    const drive = driveMatch ? driveMatch[1].toUpperCase() : 'C:';
-
     files[i] = {
       id: `file-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
       name: f.name,
@@ -708,10 +1046,9 @@ export function parseFileList(
       type: f.type,
       extension: ext,
       lastModified: f.lastModified || Date.now(),
-      category: classifyFileCategory(ext),
+      category: classifyFileCategory(ext, f.name),
       selected: true,
       content: f,
-      drive,
     };
   }
   return files;

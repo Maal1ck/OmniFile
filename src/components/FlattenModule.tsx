@@ -14,6 +14,7 @@ import {
   createZipArchive,
   triggerFileDownload,
 } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface FlattenModuleProps {
   files: VirtualFile[];
@@ -30,6 +31,7 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t } = useAppSettings();
   const [config, setConfig] = useState<FlattenConfig>({
     separator: '_',
     collisionStrategy: 'path_prefix',
@@ -42,7 +44,6 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
     return sel.length > 0 ? sel : files;
   }, [files]);
 
-  // Compute live flattening preview
   const previewResults = useMemo(() => {
     return computeDirectoryFlattening(selectedFiles, config);
   }, [selectedFiles, config]);
@@ -57,7 +58,7 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
         return {
           ...file,
           name: match.flattenedName,
-          relativePath: match.flattenedName, // Collapsed to root level!
+          relativePath: match.flattenedName,
         };
       }
       return file;
@@ -67,7 +68,7 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
   };
 
   const handleExportFlattenedZip = async () => {
-    onStartProgress('Compressing & Exporting Flattened Tree...');
+    onStartProgress(t.flatten.progress);
     const itemsToZip = previewResults.map((r) => ({
       path: r.flattenedName,
       file: r.file,
@@ -92,13 +93,9 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <FolderTree className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-white tracking-tight">
-                Directory Tree Flattener (all_files_flat)
-              </h2>
+              <h2 className="text-lg font-bold text-white tracking-tight">{t.flatten.title}</h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Recursively extract all files from deep nested directories and subdirectories into a single flat destination.
-            </p>
+            <p className="text-xs text-slate-400 mt-1">{t.flatten.subtitle}</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -109,7 +106,7 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Flatten Workspace Files</span>
+              <span>{t.flatten.applyBtn}</span>
             </button>
 
             <button
@@ -118,68 +115,53 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Download className="w-4 h-4 text-cyan-400" />
-              <span>Export Flat ZIP</span>
+              <span>{t.flatten.exportBtn}</span>
             </button>
           </div>
         </div>
 
         {/* Configuration Grid */}
         <div className="pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Collision Strategy */}
           <div>
             <label className="text-xs font-semibold text-slate-300 block mb-2">
-              Collision & Origin Strategy
+              {t.flatten.strategyLabel}
             </label>
             <div className="space-y-2">
-              {[
-                {
-                  id: 'path_prefix',
-                  label: 'Prefix Ancestor Folders',
-                  desc: 'e.g. Accounting_Q3_Budget.xlsx',
-                },
-                {
-                  id: 'number_suffix',
-                  label: 'Numeric Disambiguation',
-                  desc: 'e.g. Budget (1).xlsx',
-                },
-                {
-                  id: 'timestamp',
-                  label: 'Date Modified Token',
-                  desc: 'e.g. Budget_20251012_1.xlsx',
-                },
-              ].map((strat) => (
-                <button
-                  key={strat.id}
-                  type="button"
-                  onClick={() =>
-                    setConfig({
-                      ...config,
-                      collisionStrategy: strat.id as FlattenConfig['collisionStrategy'],
-                    })
-                  }
-                  className={`w-full p-2.5 rounded-lg text-left text-xs transition-colors cursor-pointer border ${
-                    config.collisionStrategy === strat.id
-                      ? 'bg-slate-800 border-cyan-500 text-slate-100'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="font-semibold text-slate-200">{strat.label}</div>
-                  <div className="text-[11px] text-slate-500 font-mono">{strat.desc}</div>
-                </button>
-              ))}
+              {(['path_prefix', 'number_suffix', 'timestamp'] as const).map((stratId) => {
+                const strat = t.flatten.strategies[stratId];
+                return (
+                  <button
+                    key={stratId}
+                    type="button"
+                    onClick={() =>
+                      setConfig({
+                        ...config,
+                        collisionStrategy: stratId,
+                      })
+                    }
+                    className={`w-full p-2.5 rounded-lg text-left text-xs transition-colors cursor-pointer border ${
+                      config.collisionStrategy === stratId
+                        ? 'bg-slate-800 border-cyan-500 text-slate-100'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="font-semibold text-slate-200">{strat.label}</div>
+                    <div className="text-[11px] text-slate-500 font-mono">{strat.desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Path Separator */}
           <div>
             <label className="text-xs font-semibold text-slate-300 block mb-2">
-              Path Breadcrumb Separator
+              {t.flatten.separatorLabel}
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { sep: '_', label: 'Underscore (_)' },
-                { sep: '-', label: 'Hyphen (-)' },
-                { sep: '.', label: 'Dot (.)' },
+                { sep: '_', label: t.flatten.sepUnderscore },
+                { sep: '-', label: t.flatten.sepHyphen },
+                { sep: '.', label: t.flatten.sepDot },
               ].map((s) => (
                 <button
                   key={s.sep}
@@ -198,7 +180,7 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
 
             <div className="mt-4 pt-4 border-t border-slate-800">
               <label className="text-xs font-semibold text-slate-300 block mb-2">
-                Filename Casing
+                {t.flatten.casingLabel}
               </label>
               <div className="flex gap-2">
                 <button
@@ -210,7 +192,7 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
                       : 'bg-slate-950 border-slate-800 text-slate-400'
                   }`}
                 >
-                  Preserve Original Case
+                  {t.flatten.preserveCase}
                 </button>
                 <button
                   type="button"
@@ -221,29 +203,29 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
                       : 'bg-slate-950 border-slate-800 text-slate-400'
                   }`}
                 >
-                  Normalize lowercase
+                  {t.flatten.normalizeLower}
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Quick Stats Card */}
           <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-2">
                 <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Tree Hierarchy Depth</span>
+                <span>{t.flatten.depthTitle}</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Currently detecting <span className="font-mono text-cyan-400 tabular-nums">{deepFilesCount}</span> nested files inside subfolders.
-                Flattening extracts all files into the root folder while avoiding name collisions.
+                {t.flatten.depthDesc1}{' '}
+                <span className="font-mono text-cyan-400 tabular-nums">{deepFilesCount}</span>{' '}
+                {t.flatten.depthDesc2}
               </p>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-850 flex items-center justify-between text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
-                <span>Safe non-destructive preview</span>
+                <span>{t.flatten.safePreview}</span>
               </span>
             </div>
           </div>
@@ -254,17 +236,19 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-300">
-            <span className="font-semibold text-slate-100">Flattened Output Preview</span>
+            <span className="font-semibold text-slate-100">{t.flatten.previewTitle}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">{previewResults.length} files</span>
+            <span className="font-mono tabular-nums">{previewResults.length} {t.filesCount}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums text-cyan-400">{deepFilesCount} extracted from subdirs</span>
+            <span className="font-mono tabular-nums text-cyan-400">
+              {deepFilesCount} {t.flatten.extractedSubdirs}
+            </span>
             {collisionCount > 0 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="flex items-center gap-1 font-mono tabular-nums text-amber-400">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  {collisionCount} resolved name conflicts
+                  {collisionCount} {t.flatten.resolvedConflicts}
                 </span>
               </>
             )}
@@ -275,41 +259,42 @@ export const FlattenModule: React.FC<FlattenModuleProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-2.5 px-4">Original Nested Hierarchy</th>
+                <th className="py-2.5 px-4">{t.flatten.colOriginal}</th>
                 <th className="py-2.5 px-4 w-10 text-center"></th>
-                <th className="py-2.5 px-4">Flattened Root Destination</th>
-                <th className="py-2.5 px-4 w-28 text-right">Depth</th>
+                <th className="py-2.5 px-4">{t.flatten.colFlattened}</th>
+                <th className="py-2.5 px-4 w-28 text-right">{t.flatten.colDepth}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
               {previewResults.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
-                    No files in workspace. Add files or folders in Workspace tab to preview flattening.
+                    {t.flatten.emptyTable}
                   </td>
                 </tr>
               ) : (
                 previewResults.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
-                    {item.originalPath}
-                  </td>
-                  <td className="py-2.5 px-4 text-center text-slate-500">
-                    <ArrowRight className="w-3.5 h-3.5 mx-auto" />
-                  </td>
-                  <td className="py-2.5 px-4 truncate max-w-sm">
-                    <span className="text-cyan-300 font-semibold">{item.flattenedName}</span>
-                    {item.hasCollision && (
-                      <span className="ml-2 text-[10px] text-amber-400 font-sans px-1.5 py-0.5 rounded bg-amber-950/50 border border-amber-900">
-                        Resolved
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-4 text-right tabular-nums text-slate-400 font-sans">
-                    {item.depth === 0 ? 'Root' : `${item.depth} levels deep`}
-                  </td>
-                </tr>
-              )))}
+                    <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
+                      {item.originalPath}
+                    </td>
+                    <td className="py-2.5 px-4 text-center text-slate-500">
+                      <ArrowRight className="w-3.5 h-3.5 mx-auto" />
+                    </td>
+                    <td className="py-2.5 px-4 truncate max-w-sm">
+                      <span className="text-cyan-300 font-semibold">{item.flattenedName}</span>
+                      {item.hasCollision && (
+                        <span className="ml-2 text-[10px] text-amber-400 font-sans px-1.5 py-0.5 rounded bg-amber-950/50 border border-amber-900">
+                          {t.flatten.resolvedBadge}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-right tabular-nums text-slate-400 font-sans">
+                      {item.depth === 0 ? t.flatten.rootLabel : t.flatten.levelsDeep(item.depth)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

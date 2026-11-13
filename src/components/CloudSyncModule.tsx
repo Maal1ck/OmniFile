@@ -2,14 +2,10 @@ import React, { useState } from 'react';
 import {
   Cloud,
   RefreshCw,
-  HardDrive,
-  CheckCircle2,
   Clock,
   ArrowUpRight,
   ArrowDownLeft,
   ArrowLeftRight,
-  Shield,
-  Layers,
   Settings,
 } from 'lucide-react';
 import {
@@ -22,6 +18,7 @@ import {
   VirtualFile,
 } from '../types/fileSystem';
 import { formatBytes, formatDate } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface CloudSyncModuleProps {
   files: VirtualFile[];
@@ -36,6 +33,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t } = useAppSettings();
   const [accounts, setAccounts] = useState<CloudAccount[]>([
     {
       provider: 'google_drive',
@@ -47,7 +45,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
       conflictStrategy: 'local_priority',
       autoSyncInterval: '1h',
       storageUsedBytes: 0,
-      storageTotalBytes: 107374182400, // 100 GB
+      storageTotalBytes: 107374182400,
       lastSyncTime: undefined,
     },
     {
@@ -60,7 +58,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
       conflictStrategy: 'keep_both',
       autoSyncInterval: 'daily',
       storageUsedBytes: 0,
-      storageTotalBytes: 1099511627776, // 1 TB
+      storageTotalBytes: 1099511627776,
       lastSyncTime: undefined,
     },
     {
@@ -73,7 +71,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
       conflictStrategy: 'cloud_priority',
       autoSyncInterval: 'manual',
       storageUsedBytes: 0,
-      storageTotalBytes: 21474836480, // 20 GB
+      storageTotalBytes: 21474836480,
       lastSyncTime: undefined,
     },
   ]);
@@ -81,10 +79,12 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
   const [activeProvider, setActiveProvider] = useState<CloudProvider>('google_drive');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncLogs, setSyncLogs] = useState<SyncLogItem[]>([]);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
   const currentAccount = accounts.find((a) => a.provider === activeProvider)!;
 
   const handleToggleConnection = (provider: CloudProvider) => {
+    setWarningMessage(null);
     setAccounts(
       accounts.map((acc) => {
         if (acc.provider === provider) {
@@ -115,23 +115,23 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
 
   const handleSyncNow = async () => {
     if (!currentAccount.connected) {
-      alert('Please connect this cloud provider first.');
+      setWarningMessage(t.cloud.connectAlert);
       return;
     }
+    setWarningMessage(null);
 
     setIsSyncing(true);
-    onStartProgress(`Synchronizing with ${currentAccount.name}...`);
+    onStartProgress(t.cloud.syncProgress(currentAccount.name));
 
     try {
       const syncBatch = files.slice(0, 10);
       for (let i = 0; i < syncBatch.length; i++) {
         const file = syncBatch[i];
         const percent = Math.round(((i + 1) / syncBatch.length) * 100);
-        onUpdateProgress(percent, `Syncing: ${file.name}`);
+        onUpdateProgress(percent, t.cloud.syncingItem(file.name));
         await new Promise((r) => setTimeout(r, 220));
       }
 
-      // Add fresh log entries
       const newLogs: SyncLogItem[] = syncBatch.slice(0, 3).map((f, idx) => ({
         id: `log-${Date.now()}-${idx}`,
         timestamp: Date.now(),
@@ -139,12 +139,11 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
         action: currentAccount.syncMode === 'upload_backup' ? 'uploaded' : 'synced',
         fileName: f.relativePath,
         status: 'success',
-        details: `Cloud replica updated in ${currentAccount.targetRemoteFolder}`,
+        details: `${currentAccount.targetRemoteFolder}`,
       }));
 
       setSyncLogs((prev) => [...newLogs, ...prev]);
 
-      // Update account last sync time
       handleUpdateAccount({
         lastSyncTime: Date.now(),
         storageUsedBytes: currentAccount.storageUsedBytes + 1500000,
@@ -163,11 +162,9 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <Cloud className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-white tracking-tight">Cloud Storage Synchronization</h2>
+              <h2 className="text-lg font-bold text-white tracking-tight">{t.cloud.title}</h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Synchronize, backup, and mirror your local organized folders with cloud providers and remote drives.
-            </p>
+            <p className="text-xs text-slate-400 mt-1">{t.cloud.subtitle}</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -178,10 +175,16 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
               className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 rounded-lg transition-all cursor-pointer shadow-sm"
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Synchronizing...' : 'Sync Now'}</span>
+              <span>{isSyncing ? t.cloud.syncing : t.cloud.syncNow}</span>
             </button>
           </div>
         </div>
+
+        {warningMessage && (
+          <div className="mt-4 p-3 rounded-lg bg-amber-950/50 border border-amber-800 text-xs text-amber-300">
+            {warningMessage}
+          </div>
+        )}
 
         {/* Provider Cards */}
         <div className="pt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -212,15 +215,14 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
                         : 'bg-slate-900 text-slate-500 border border-slate-800'
                     }`}
                   >
-                    {acc.connected ? 'Connected' : 'Disconnected'}
+                    {acc.connected ? t.cloud.connected : t.cloud.disconnected}
                   </span>
                 </div>
 
                 <div className="text-xs text-slate-400 mb-3 truncate">
-                  {acc.connected ? acc.accountEmail : 'Click to configure and link'}
+                  {acc.connected ? acc.accountEmail : t.cloud.clickToLink}
                 </div>
 
-                {/* Storage Quota Bar */}
                 {acc.connected && (
                   <div className="space-y-1.5 pt-2 border-t border-slate-750">
                     <div className="flex justify-between text-[11px] text-slate-400 font-mono">
@@ -247,7 +249,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
           <div className="flex items-center gap-2">
             <Settings className="w-4 h-4 text-cyan-400" />
             <h3 className="text-sm font-bold text-white tracking-tight">
-              {currentAccount.name} Sync Settings
+              {t.cloud.syncSettings(currentAccount.name)}
             </h3>
           </div>
 
@@ -260,36 +262,21 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
                 : 'bg-cyan-600 text-white hover:bg-cyan-500'
             }`}
           >
-            {currentAccount.connected ? 'Disconnect Account' : 'Connect Account'}
+            {currentAccount.connected ? t.cloud.disconnectBtn : t.cloud.connectBtn}
           </button>
         </div>
 
         <div className="pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Sync Direction */}
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-2">Sync Direction</label>
+            <label className="text-xs font-semibold text-slate-300 block mb-2">{t.cloud.syncDirection}</label>
             <div className="space-y-2">
               {[
-                {
-                  id: 'two_way',
-                  label: 'Two-Way Mirror',
-                  desc: 'Sync local changes and fetch cloud changes',
-                  icon: ArrowLeftRight,
-                },
-                {
-                  id: 'upload_backup',
-                  label: 'Upload / Backup Only',
-                  desc: 'Pushes local changes without pulling cloud edits',
-                  icon: ArrowUpRight,
-                },
-                {
-                  id: 'download_mirror',
-                  label: 'Download / Restore',
-                  desc: 'Replaces local folder with latest cloud snapshot',
-                  icon: ArrowDownLeft,
-                },
+                { id: 'two_way' as const, icon: ArrowLeftRight },
+                { id: 'upload_backup' as const, icon: ArrowUpRight },
+                { id: 'download_mirror' as const, icon: ArrowDownLeft },
               ].map((m) => {
                 const Icon = m.icon;
+                const modeText = t.cloud.modes[m.id];
                 return (
                   <button
                     key={m.id}
@@ -303,8 +290,8 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
                   >
                     <Icon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-semibold text-slate-200">{m.label}</div>
-                      <div className="text-[11px] text-slate-500">{m.desc}</div>
+                      <div className="font-semibold text-slate-200">{modeText.label}</div>
+                      <div className="text-[11px] text-slate-500">{modeText.desc}</div>
                     </div>
                   </button>
                 );
@@ -312,11 +299,10 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
             </div>
           </div>
 
-          {/* Conflict Resolution & Folder Target */}
           <div className="space-y-4">
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Remote Cloud Folder
+                {t.cloud.remoteFolder}
               </label>
               <input
                 type="text"
@@ -328,7 +314,7 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
 
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Conflict Resolution Strategy
+                {t.cloud.conflictStrategy}
               </label>
               <select
                 value={currentAccount.conflictStrategy}
@@ -337,46 +323,40 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
                 }
                 className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2"
               >
-                <option value="local_priority">Local Priority (Always overwrite cloud copy)</option>
-                <option value="cloud_priority">Cloud Priority (Protect cloud revision)</option>
-                <option value="keep_both">Keep Both (Append timestamp suffix on conflict)</option>
+                <option value="local_priority">{t.cloud.conflictLocal}</option>
+                <option value="cloud_priority">{t.cloud.conflictCloud}</option>
+                <option value="keep_both">{t.cloud.conflictBoth}</option>
               </select>
             </div>
           </div>
 
-          {/* Sync Frequency Schedule */}
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-2">Sync Schedule</label>
+            <label className="text-xs font-semibold text-slate-300 block mb-2">{t.cloud.syncSchedule}</label>
             <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'manual', label: 'Manual Only' },
-                { id: '15m', label: 'Every 15 Mins' },
-                { id: '1h', label: 'Hourly' },
-                { id: 'daily', label: 'Daily Backup' },
-              ].map((s) => (
+              {(['manual', '15m', '1h', 'daily'] as const).map((schedId) => (
                 <button
-                  key={s.id}
+                  key={schedId}
                   type="button"
                   onClick={() =>
-                    handleUpdateAccount({ autoSyncInterval: s.id as AutoSyncInterval })
+                    handleUpdateAccount({ autoSyncInterval: schedId as AutoSyncInterval })
                   }
                   className={`p-2.5 rounded-lg text-center text-xs transition-colors cursor-pointer border ${
-                    currentAccount.autoSyncInterval === s.id
+                    currentAccount.autoSyncInterval === schedId
                       ? 'bg-slate-800 border-cyan-500 text-cyan-300 font-semibold'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {s.label}
+                  {t.cloud.schedules[schedId]}
                 </button>
               ))}
             </div>
 
             <div className="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-lg text-xs space-y-1">
-              <div className="text-slate-500">Last Synced:</div>
+              <div className="text-slate-500">{t.cloud.lastSynced}</div>
               <div className="font-mono text-slate-200">
                 {currentAccount.lastSyncTime
                   ? formatDate(currentAccount.lastSyncTime, 'YYYY-MM-DD HH:mm')
-                  : 'Never'}
+                  : t.cloud.never}
               </div>
             </div>
           </div>
@@ -388,14 +368,14 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-300">
             <Clock className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="font-semibold text-slate-100">Sync Execution Logs & Audits</span>
+            <span className="font-semibold text-slate-100">{t.cloud.logsTitle}</span>
           </div>
           <button
             type="button"
             onClick={() => setSyncLogs([])}
             className="text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer"
           >
-            Clear Log
+            {t.cloud.clearLog}
           </button>
         </div>
 
@@ -403,17 +383,17 @@ export const CloudSyncModule: React.FC<CloudSyncModuleProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-2 px-4 w-36">Timestamp</th>
-                <th className="py-2 px-4 w-28">Action</th>
-                <th className="py-2 px-4">File Affected</th>
-                <th className="py-2 px-4">Details</th>
+                <th className="py-2 px-4 w-36">{t.cloud.colTime}</th>
+                <th className="py-2 px-4 w-28">{t.cloud.colAction}</th>
+                <th className="py-2 px-4">{t.cloud.colFile}</th>
+                <th className="py-2 px-4">{t.cloud.colDetails}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300">
               {syncLogs.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-8 text-center text-slate-500 font-sans">
-                    No sync events recorded yet. Connect an account and trigger a sync to audit operations.
+                    {t.cloud.emptyLogs}
                   </td>
                 </tr>
               ) : (

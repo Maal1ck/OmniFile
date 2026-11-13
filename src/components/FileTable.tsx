@@ -14,9 +14,11 @@ import {
   File,
   Eye,
   SlidersHorizontal,
+  Globe,
 } from 'lucide-react';
 import { VirtualFile, FileCategory } from '../types/fileSystem';
 import { formatBytes, formatDate } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface FileTableProps {
   files: VirtualFile[];
@@ -25,7 +27,9 @@ interface FileTableProps {
   onInvertSelection: () => void;
   onRemoveFile: (id: string) => void;
   onRemoveSelected: () => void;
-  onQuickAction: (action: 'rename' | 'compress' | 'flatten' | 'organize' | 'semantic' | 'dedup' | 'privacy' | 'visualizer') => void;
+  onQuickAction: (
+    action: 'rename' | 'compress' | 'flatten' | 'organize' | 'semantic' | 'dedup' | 'privacy' | 'visualizer'
+  ) => void;
 }
 
 export const FileTable: React.FC<FileTableProps> = ({
@@ -37,6 +41,7 @@ export const FileTable: React.FC<FileTableProps> = ({
   onRemoveSelected,
   onQuickAction,
 }) => {
+  const { t } = useAppSettings();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<FileCategory | 'all'>('all');
   const [previewFile, setPreviewFile] = useState<VirtualFile | null>(null);
@@ -49,17 +54,21 @@ export const FileTable: React.FC<FileTableProps> = ({
     });
 
     const list: Array<{ id: FileCategory | 'all'; label: string; count: number }> = [
-      { id: 'all', label: 'All Files', count: files.length },
-      { id: 'documents', label: 'Documents', count: counts['documents'] || 0 },
-      { id: 'spreadsheets', label: 'Sheets', count: counts['spreadsheets'] || 0 },
-      { id: 'images', label: 'Images', count: counts['images'] || 0 },
-      { id: 'audio', label: 'Audio', count: counts['audio'] || 0 },
-      { id: 'videos', label: 'Video', count: counts['videos'] || 0 },
-      { id: 'archives', label: 'Archives', count: counts['archives'] || 0 },
-      { id: 'code', label: 'Code', count: counts['code'] || 0 },
+      { id: 'all', label: t.fileTable.allFiles, count: files.length },
+      { id: 'geospatial', label: t.fileTable.categories.geospatial, count: counts['geospatial'] || 0 },
+      { id: 'documents', label: t.fileTable.categories.documents, count: counts['documents'] || 0 },
+      { id: 'spreadsheets', label: t.fileTable.categories.spreadsheets, count: counts['spreadsheets'] || 0 },
+      { id: 'images', label: t.fileTable.categories.images, count: counts['images'] || 0 },
+      { id: 'audio', label: t.fileTable.categories.audio, count: counts['audio'] || 0 },
+      { id: 'videos', label: t.fileTable.categories.videos, count: counts['videos'] || 0 },
+      { id: 'archives', label: t.fileTable.categories.archives, count: counts['archives'] || 0 },
+      { id: 'code', label: t.fileTable.categories.code, count: counts['code'] || 0 },
+      { id: 'data', label: t.fileTable.categories.data, count: counts['data'] || 0 },
+      { id: 'presentations', label: t.fileTable.categories.presentations, count: counts['presentations'] || 0 },
+      { id: 'other', label: t.fileTable.categories.other, count: counts['other'] || 0 },
     ];
     return list.filter((c) => c.id === 'all' || c.count > 0);
-  }, [files]);
+  }, [files, t.fileTable]);
 
   const filteredFiles = useMemo(() => {
     const normalizedQuery = searchQuery.toLowerCase();
@@ -86,6 +95,8 @@ export const FileTable: React.FC<FileTableProps> = ({
 
   const getFileIcon = (cat: FileCategory) => {
     switch (cat) {
+      case 'geospatial':
+        return <Globe className="w-4 h-4 text-teal-400 shrink-0" />;
       case 'documents':
         return <FileText className="w-4 h-4 text-blue-400 shrink-0" />;
       case 'spreadsheets':
@@ -109,7 +120,6 @@ export const FileTable: React.FC<FileTableProps> = ({
     <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
       {/* Control Toolbar */}
       <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Search Input */}
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -119,78 +129,79 @@ export const FileTable: React.FC<FileTableProps> = ({
               setSearchQuery(e.target.value);
               setVisibleLimit(200);
             }}
-            placeholder="Search by file name or directory path..."
+            placeholder={t.fileTable.searchPlaceholder}
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-500 text-xs rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:border-cyan-500 transition-colors"
           />
         </div>
 
-        {/* Quick Batch Actions if items selected */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Quick Batch Actions */}
+        <div className="flex items-center gap-2 shrink-0 overflow-x-auto">
           {selectedCount > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 mr-1">
-                <span className="font-mono tabular-nums font-semibold text-cyan-400">{selectedCount}</span> of{' '}
-                <span className="font-mono tabular-nums">{files.length}</span> selected
+              <span className="text-xs text-slate-400 mr-1 whitespace-nowrap">
+                <span className="font-mono tabular-nums font-semibold text-cyan-400">{selectedCount}</span>{' '}
+                {t.fileTable.of}{' '}
+                <span className="font-mono tabular-nums">{files.length}</span> {t.fileTable.selected}
               </span>
 
               <button
                 type="button"
                 onClick={() => onQuickAction('semantic')}
-                className="px-2.5 py-1 text-xs font-medium text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-800 rounded-md transition-colors cursor-pointer"
-                title="Extract invoice & content DNA"
+                className="px-2.5 py-1 text-xs font-medium text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-800 rounded-md transition-colors cursor-pointer whitespace-nowrap"
+                title={t.fileTable.dnaTitle}
               >
-                File DNA
+                {t.fileTable.dnaBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onQuickAction('dedup')}
-                className="px-2.5 py-1 text-xs font-medium text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800 rounded-md transition-colors cursor-pointer"
-                title="Detect hash duplicate files"
+                className="px-2.5 py-1 text-xs font-medium text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800 rounded-md transition-colors cursor-pointer whitespace-nowrap"
+                title={t.fileTable.dupTitle}
               >
-                Duplicates
+                {t.fileTable.dupBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onQuickAction('privacy')}
-                className="px-2.5 py-1 text-xs font-medium text-purple-300 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-800 rounded-md transition-colors cursor-pointer"
-                title="Scrub EXIF & private tokens"
+                className="px-2.5 py-1 text-xs font-medium text-purple-300 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-800 rounded-md transition-colors cursor-pointer whitespace-nowrap"
+                title={t.fileTable.privacyTitle}
               >
-                Privacy
+                {t.fileTable.privacyBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onQuickAction('rename')}
-                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer whitespace-nowrap"
               >
-                Rename
+                {t.fileTable.renameBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onQuickAction('compress')}
-                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer whitespace-nowrap"
               >
-                Compress
+                {t.fileTable.compressBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onQuickAction('flatten')}
-                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer whitespace-nowrap"
               >
-                Flatten
+                {t.fileTable.flattenBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onQuickAction('organize')}
-                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer"
+                className="px-2.5 py-1 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-md transition-colors cursor-pointer whitespace-nowrap"
               >
-                Organize
+                {t.fileTable.organizeBtn}
               </button>
 
               <button
                 type="button"
                 onClick={onRemoveSelected}
                 className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-md transition-colors cursor-pointer"
-                title="Remove selected from workspace"
+                title={t.fileTable.removeSelectedTitle}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -199,7 +210,7 @@ export const FileTable: React.FC<FileTableProps> = ({
         </div>
       </div>
 
-      {/* Category Filter Bar (Interactive segmented controls) */}
+      {/* Category Filter Bar */}
       <div className="px-4 py-2 border-b border-slate-800 bg-slate-950/40 flex items-center gap-1.5 overflow-x-auto text-xs">
         <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500 mr-1 shrink-0" />
         {categories.map((cat) => {
@@ -241,19 +252,20 @@ export const FileTable: React.FC<FileTableProps> = ({
             ) : (
               <Square className="w-3.5 h-3.5 text-slate-500" />
             )}
-            <span>Select All</span>
+            <span>{t.fileTable.selectAll}</span>
           </button>
           <button
             type="button"
             onClick={onInvertSelection}
             className="hover:text-slate-200 transition-colors cursor-pointer"
           >
-            Invert
+            {t.fileTable.invert}
           </button>
         </div>
 
         <div className="text-[11px] text-slate-500 font-mono">
-          Showing {visibleFiles.length} of {filteredFiles.length} matching items
+          {t.fileTable.showing} {visibleFiles.length} {t.fileTable.of} {filteredFiles.length}{' '}
+          {t.fileTable.matchingItems}
         </div>
       </div>
 
@@ -263,11 +275,11 @@ export const FileTable: React.FC<FileTableProps> = ({
           <thead>
             <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               <th className="py-2.5 px-4 w-10"></th>
-              <th className="py-2.5 px-4">File Name & Source Hierarchy</th>
-              <th className="py-2.5 px-4 w-28">Type</th>
-              <th className="py-2.5 px-4 w-28 text-right">Size</th>
-              <th className="py-2.5 px-4 w-36 text-right">Last Modified</th>
-              <th className="py-2.5 px-4 w-16 text-center">Action</th>
+              <th className="py-2.5 px-4">{t.fileTable.colName}</th>
+              <th className="py-2.5 px-4 w-28">{t.fileTable.colType}</th>
+              <th className="py-2.5 px-4 w-28 text-right">{t.fileTable.colSize}</th>
+              <th className="py-2.5 px-4 w-36 text-right">{t.fileTable.colModified}</th>
+              <th className="py-2.5 px-4 w-16 text-center">{t.fileTable.colAction}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 text-xs">
@@ -276,15 +288,15 @@ export const FileTable: React.FC<FileTableProps> = ({
                 <td colSpan={6} className="py-16 text-center text-slate-500">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <File className="w-8 h-8 text-slate-600 stroke-[1.5]" />
-                    <span className="text-sm font-medium text-slate-400">Workspace is empty</span>
-                    <span className="text-xs text-slate-500">Select or drop your files and folders above to begin processing</span>
+                    <span className="text-sm font-medium text-slate-400">{t.fileTable.emptyTitle}</span>
+                    <span className="text-xs text-slate-500">{t.fileTable.emptySubtitle}</span>
                   </div>
                 </td>
               </tr>
             ) : visibleFiles.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-slate-500">
-                  No files match your search filter
+                  {t.fileTable.noMatch}
                 </td>
               </tr>
             ) : (
@@ -300,7 +312,6 @@ export const FileTable: React.FC<FileTableProps> = ({
                       file.selected ? 'bg-cyan-950/15' : ''
                     }`}
                   >
-                    {/* Checkbox */}
                     <td className="py-2 px-4">
                       <button
                         type="button"
@@ -315,7 +326,6 @@ export const FileTable: React.FC<FileTableProps> = ({
                       </button>
                     </td>
 
-                    {/* File Name & Path */}
                     <td className="py-2 px-4 min-w-[280px]">
                       <div className="flex items-center gap-2.5">
                         {getFileIcon(file.category)}
@@ -330,31 +340,27 @@ export const FileTable: React.FC<FileTableProps> = ({
                       </div>
                     </td>
 
-                    {/* Type & Extension */}
                     <td className="py-2 px-4 whitespace-nowrap">
                       <span className="font-mono text-[11px] uppercase text-slate-400">
-                        .{file.extension || 'none'}
+                        .{file.extension || t.fileTable.noneExt}
                       </span>
                     </td>
 
-                    {/* Size */}
                     <td className="py-2 px-4 text-right font-mono tabular-nums text-slate-300 whitespace-nowrap">
                       {formatBytes(file.size)}
                     </td>
 
-                    {/* Modified Date */}
                     <td className="py-2 px-4 text-right font-mono tabular-nums text-slate-400 whitespace-nowrap">
                       {formatDate(file.lastModified, 'YYYY-MM-DD')}
                     </td>
 
-                    {/* Actions */}
                     <td className="py-2 px-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => setPreviewFile(file)}
                           className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
-                          title="Inspect metadata"
+                          title={t.fileTable.inspectMetadata}
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
@@ -362,7 +368,7 @@ export const FileTable: React.FC<FileTableProps> = ({
                           type="button"
                           onClick={() => onRemoveFile(file.id)}
                           className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                          title="Remove file"
+                          title={t.fileTable.removeFile}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -380,9 +386,9 @@ export const FileTable: React.FC<FileTableProps> = ({
           <button
             type="button"
             onClick={() => setVisibleLimit((limit) => limit + 200)}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white cursor-pointer"
           >
-            Show 200 more files
+            {t.fileTable.showMore}
           </button>
         </div>
       )}
@@ -406,23 +412,25 @@ export const FileTable: React.FC<FileTableProps> = ({
 
             <div className="py-4 space-y-3 text-xs">
               <div>
-                <span className="text-slate-500 block">Relative Directory Path</span>
+                <span className="text-slate-500 block">{t.fileTable.modalRelPath}</span>
                 <span className="font-mono text-slate-300 break-all">{previewFile.relativePath}</span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-slate-500 block">Exact Size</span>
+                  <span className="text-slate-500 block">{t.fileTable.modalExactSize}</span>
                   <span className="font-mono tabular-nums text-slate-300">
                     {previewFile.size.toLocaleString()} bytes ({formatBytes(previewFile.size)})
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Category</span>
-                  <span className="capitalize text-slate-300">{previewFile.category}</span>
+                  <span className="text-slate-500 block">{t.fileTable.modalCategory}</span>
+                  <span className="capitalize text-slate-300">
+                    {t.fileTable.categories[previewFile.category]}
+                  </span>
                 </div>
               </div>
               <div>
-                <span className="text-slate-500 block">Last Modified Timestamp</span>
+                <span className="text-slate-500 block">{t.fileTable.modalModified}</span>
                 <span className="font-mono tabular-nums text-slate-300">
                   {formatDate(previewFile.lastModified, 'YYYY-MM-DD HH:mm')}
                 </span>
@@ -435,7 +443,7 @@ export const FileTable: React.FC<FileTableProps> = ({
                 onClick={() => setPreviewFile(null)}
                 className="px-4 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
               >
-                Close
+                {t.fileTable.close}
               </button>
             </div>
           </div>

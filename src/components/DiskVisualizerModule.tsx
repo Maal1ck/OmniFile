@@ -1,17 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import {
   PieChart,
-  HardDrive,
   FolderOpen,
   File,
-  Layers,
   ChevronRight,
-  Filter,
-  Download,
 } from 'lucide-react';
 import { VirtualFile, TreemapNode, FileCategory } from '../types/fileSystem';
 import { buildDirectoryTreemap, CATEGORY_COLORS } from '../utils/groundbreakingEngines';
 import { formatBytes } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface DiskVisualizerModuleProps {
   files: VirtualFile[];
@@ -20,8 +17,8 @@ interface DiskVisualizerModuleProps {
 
 export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
   files,
-  onFilterByCategory,
 }) => {
+  const { t } = useAppSettings();
   const rootNode = useMemo(() => {
     return buildDirectoryTreemap(files);
   }, [files]);
@@ -29,7 +26,6 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
   const [currentPath, setCurrentPath] = useState<string>('');
   const [selectedNode, setSelectedNode] = useState<TreemapNode | null>(null);
 
-  // Get active directory node
   const activeDirectory = useMemo(() => {
     if (!currentPath) return rootNode;
 
@@ -44,7 +40,6 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
     return curr;
   }, [rootNode, currentPath]);
 
-  // Breakdown by category for high-level storage stats
   const categoryBreakdown = useMemo(() => {
     const map = new Map<FileCategory, { count: number; size: number }>();
     files.forEach((f) => {
@@ -72,16 +67,16 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
   };
 
   const breadcrumbs = useMemo(() => {
-    if (!currentPath) return [{ name: 'Root Workspace', path: '' }];
+    if (!currentPath) return [{ name: t.visualizer.rootWorkspace, path: '' }];
     const parts = currentPath.split('/').filter(Boolean);
-    const crumbs = [{ name: 'Root Workspace', path: '' }];
+    const crumbs: Array<{ name: string; path: string }> = [{ name: t.visualizer.rootWorkspace, path: '' }];
     let accum = '';
     for (const p of parts) {
       accum = accum ? `${accum}/${p}` : p;
       crumbs.push({ name: p, path: accum });
     }
     return crumbs;
-  }, [currentPath]);
+  }, [currentPath, t.visualizer.rootWorkspace]);
 
   return (
     <div className="space-y-6">
@@ -94,21 +89,19 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white tracking-tight">
-                  Interactive Disk Space Treemap & Heatmap
-                </h2>
+                <h2 className="text-lg font-bold text-white tracking-tight">{t.visualizer.title}</h2>
                 <span className="text-[11px] font-mono text-emerald-400 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60 font-semibold">
-                  WinDirStat Mode
+                  {t.visualizer.badge}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Visually explore folder hierarchy scale, locate massive storage hogs, and pinpoint nested subdirectory payloads with immediate proportional drill-downs.
+                {t.visualizer.subtitle}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-            <span>Total Inspected:</span>
+            <span>{t.visualizer.totalInspected}</span>
             <span className="text-emerald-400 font-bold tabular-nums text-sm">
               {rootNode.formattedSize}
             </span>
@@ -118,11 +111,12 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
         {/* Category Storage Proportions Bar */}
         <div className="pt-6">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2 font-medium">
-            <span>Storage Allocation by Format</span>
-            <span className="font-mono tabular-nums text-slate-500">{files.length} total items</span>
+            <span>{t.visualizer.allocationTitle}</span>
+            <span className="font-mono tabular-nums text-slate-500">
+              {files.length} {t.visualizer.totalItems}
+            </span>
           </div>
 
-          {/* Proportional Strip */}
           <div className="w-full h-3 rounded-full bg-slate-950 overflow-hidden flex shadow-inner">
             {categoryBreakdown.map(([cat, data]) => {
               const pct = rootNode.size > 0 ? (data.size / rootNode.size) * 100 : 0;
@@ -134,14 +128,13 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
                     width: `${pct}%`,
                     backgroundColor: CATEGORY_COLORS[cat] || '#64748b',
                   }}
-                  title={`${cat}: ${formatBytes(data.size)} (${pct.toFixed(1)}%)`}
+                  title={`${t.fileTable.categories[cat]}: ${formatBytes(data.size)} (${pct.toFixed(1)}%)`}
                   className="h-full hover:opacity-80 transition-opacity cursor-pointer"
                 />
               );
             })}
           </div>
 
-          {/* Legend Chips */}
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
             {categoryBreakdown.slice(0, 6).map(([cat, data]) => {
               const pct = rootNode.size > 0 ? (data.size / rootNode.size) * 100 : 0;
@@ -151,7 +144,7 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: CATEGORY_COLORS[cat] || '#64748b' }}
                   />
-                  <span className="capitalize">{cat}:</span>
+                  <span>{t.fileTable.categories[cat]}:</span>
                   <span className="font-mono tabular-nums text-slate-400">
                     {formatBytes(data.size)} ({pct.toFixed(0)}%)
                   </span>
@@ -164,7 +157,6 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
 
       {/* Interactive Treemap Canvas Viewport */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-        {/* Breadcrumb Navigator */}
         <div className="flex items-center gap-1.5 text-xs text-slate-400 overflow-x-auto pb-2 border-b border-slate-800">
           <FolderOpen className="w-4 h-4 text-emerald-400 shrink-0 mr-1" />
           {breadcrumbs.map((crumb, idx) => (
@@ -185,21 +177,24 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
           ))}
         </div>
 
-        {/* Proportional Grid Nodes in Current Directory */}
         <div className="pt-2">
           <div className="text-xs text-slate-400 mb-3 flex items-center justify-between">
             <span>
-              Contents of <span className="font-mono text-emerald-300">{activeDirectory.name}</span> ({activeDirectory.children?.length || 0} nodes)
+              {t.visualizer.contentsOf}{' '}
+              <span className="font-mono text-emerald-300">
+                {currentPath === '' ? t.visualizer.rootWorkspace : activeDirectory.name}
+              </span>{' '}
+              ({activeDirectory.children?.length || 0} {t.visualizer.nodes})
             </span>
             <span className="font-mono text-slate-500 tabular-nums">
-              Folder total: {activeDirectory.formattedSize}
+              {t.visualizer.folderTotal} {activeDirectory.formattedSize}
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {(!activeDirectory.children || activeDirectory.children.length === 0) ? (
+            {!activeDirectory.children || activeDirectory.children.length === 0 ? (
               <div className="col-span-full py-12 text-center text-slate-500 font-sans">
-                No files loaded in workspace. Add files in Workspace tab to view the disk heatmap.
+                {t.visualizer.emptyTable}
               </div>
             ) : (
               activeDirectory.children.map((child) => {
@@ -211,49 +206,51 @@ export const DiskVisualizerModule: React.FC<DiskVisualizerModuleProps> = ({
                   <div
                     key={child.path}
                     onClick={() => handleDrillDown(child)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
-                    isFolder
-                      ? 'bg-slate-950/80 border-slate-800 hover:border-emerald-500 hover:bg-slate-850'
-                      : 'bg-slate-950/50 border-slate-850 hover:border-cyan-500'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 truncate">
-                      {isFolder ? (
-                        <FolderOpen className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <File className="w-4 h-4 text-cyan-400 shrink-0" />
-                      )}
-                      <span className="font-medium text-xs text-slate-200 truncate">
-                        {child.name}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                      isFolder
+                        ? 'bg-slate-950/80 border-slate-800 hover:border-emerald-500 hover:bg-slate-850'
+                        : 'bg-slate-950/50 border-slate-850 hover:border-cyan-500'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 truncate">
+                        {isFolder ? (
+                          <FolderOpen className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <File className="w-4 h-4 text-cyan-400 shrink-0" />
+                        )}
+                        <span className="font-medium text-xs text-slate-200 truncate">
+                          {child.name}
+                        </span>
+                      </div>
+
+                      <span className="text-[10px] font-mono tabular-nums text-slate-500 shrink-0">
+                        {ratio}%
                       </span>
                     </div>
 
-                    <span className="text-[10px] font-mono tabular-nums text-slate-500 shrink-0">
-                      {ratio}%
-                    </span>
-                  </div>
+                    <div className="space-y-1.5 pt-2 border-t border-slate-850/60">
+                      <div className="flex justify-between items-center text-[11px] font-mono text-slate-400">
+                        <span className="text-emerald-400 font-semibold">{child.formattedSize}</span>
+                        <span>
+                          {isFolder ? t.visualizer.itemsCount(child.fileCount) : `.${child.extension}`}
+                        </span>
+                      </div>
 
-                  <div className="space-y-1.5 pt-2 border-t border-slate-850/60">
-                    <div className="flex justify-between items-center text-[11px] font-mono text-slate-400">
-                      <span className="text-emerald-400 font-semibold">{child.formattedSize}</span>
-                      <span>{isFolder ? `${child.fileCount} items` : `.${child.extension}`}</span>
-                    </div>
-
-                    <div className="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${Math.min(100, Math.max(5, ratio))}%` }}
-                      />
+                      <div className="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(5, ratio))}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            }))}
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Selected File Details Box */}
         {selectedNode && (
           <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-300">
             <div className="flex items-center gap-3">

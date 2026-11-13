@@ -5,15 +5,13 @@ import {
   Lock,
   KeyRound,
   MapPin,
-  Trash2,
-  AlertTriangle,
-  FileText,
   Eye,
   CheckCircle2,
 } from 'lucide-react';
 import { VirtualFile, PrivacyInspectionResult } from '../types/fileSystem';
 import { inspectFilePrivacy } from '../utils/groundbreakingEngines';
 import { mapAsyncWithConcurrency } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface PrivacyScrubberModuleProps {
   files: VirtualFile[];
@@ -30,6 +28,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t } = useAppSettings();
   const [inspections, setInspections] = useState<PrivacyInspectionResult[]>([]);
   const [inspecting, setInspecting] = useState<boolean>(true);
   const [activeInspect, setActiveInspect] = useState<PrivacyInspectionResult | null>(null);
@@ -65,13 +64,12 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
   }, [inspections]);
 
   const handleSanitizeAllFlagged = () => {
-    onStartProgress('Scrubbing Metadata & Sanitizing Private Tokens...');
-    onUpdateProgress(40, 'Stripping EXIF GPS tags and author metadata...');
+    onStartProgress(t.privacy.progressTitle);
+    onUpdateProgress(40, t.privacy.progressSub1);
 
     const updated = files.map((file) => {
       const match = inspections.find((ins) => ins.file.id === file.id);
       if (match) {
-        // Redact secrets if text
         if (typeof file.content === 'string') {
           let scrubbed = file.content;
           match.detectedSecrets.forEach((sec) => {
@@ -86,7 +84,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
       return file;
     });
 
-    onUpdateProgress(90, 'Applying sanitized documents...');
+    onUpdateProgress(90, t.privacy.progressSub2);
 
     setTimeout(() => {
       onFinishProgress();
@@ -114,15 +112,13 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white tracking-tight">
-                  Privacy & Secret Metadata Scrubber
-                </h2>
+                <h2 className="text-lg font-bold text-white tracking-tight">{t.privacy.title}</h2>
                 <span className="text-[11px] font-mono text-purple-400 px-2 py-0.5 rounded bg-purple-950/60 border border-purple-800/60 font-semibold">
-                  Zero Leak Guard
+                  {t.privacy.badge}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Scan and strip hidden camera EXIF geolocation tags, author usernames, revision history, and leaked API/AWS keys before uploading to cloud storage or sharing.
+                {t.privacy.subtitle}
               </p>
             </div>
           </div>
@@ -135,7 +131,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 rounded-lg transition-all cursor-pointer shadow-md shadow-indigo-950/40"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Sanitize All Flagged Items ({flaggedFiles.length})</span>
+              <span>{t.privacy.sanitizeBtn(flaggedFiles.length)}</span>
             </button>
           </div>
         </div>
@@ -144,9 +140,9 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
         <div className="pt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between">
             <div>
-              <div className="text-[11px] text-slate-400">Leaked Keys & PII Tokens</div>
+              <div className="text-[11px] text-slate-400">{t.privacy.metricSecrets}</div>
               <div className="text-lg font-mono font-bold text-rose-400 mt-0.5 tabular-nums">
-                {totalSecretsFound} detected
+                {totalSecretsFound} {t.privacy.detected}
               </div>
             </div>
             <KeyRound className="w-6 h-6 text-slate-600" />
@@ -154,9 +150,9 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
 
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between">
             <div>
-              <div className="text-[11px] text-slate-400">GPS Geolocation Tags</div>
+              <div className="text-[11px] text-slate-400">{t.privacy.metricGps}</div>
               <div className="text-lg font-mono font-bold text-amber-400 mt-0.5 tabular-nums">
-                {totalGpsTagged} images
+                {totalGpsTagged} {t.privacy.images}
               </div>
             </div>
             <MapPin className="w-6 h-6 text-slate-600" />
@@ -164,9 +160,9 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
 
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between">
             <div>
-              <div className="text-[11px] text-slate-400">Files Requiring Sanitization</div>
+              <div className="text-[11px] text-slate-400">{t.privacy.metricFlagged}</div>
               <div className="text-lg font-mono font-bold text-purple-400 mt-0.5 tabular-nums">
-                {flaggedFiles.length} files
+                {flaggedFiles.length} {t.filesCount}
               </div>
             </div>
             <Lock className="w-6 h-6 text-slate-600" />
@@ -178,9 +174,11 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-300">
-            <span className="font-semibold text-slate-100">Audit & Sanitization Pipeline</span>
+            <span className="font-semibold text-slate-100">{t.privacy.tableTitle}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">{inspections.length} files scanned</span>
+            <span className="font-mono tabular-nums">
+              {inspections.length} {t.privacy.scanned}
+            </span>
           </div>
         </div>
 
@@ -188,97 +186,99 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-2.5 px-4 w-72">File Name & Path</th>
-                <th className="py-2.5 px-4">Detected Privacy Exposure</th>
-                <th className="py-2.5 px-4 w-36">Status</th>
-                <th className="py-2.5 px-4 w-20 text-center">Inspect</th>
+                <th className="py-2.5 px-4 w-72">{t.privacy.colFile}</th>
+                <th className="py-2.5 px-4">{t.privacy.colExposure}</th>
+                <th className="py-2.5 px-4 w-36">{t.privacy.colStatus}</th>
+                <th className="py-2.5 px-4 w-20 text-center">{t.privacy.colInspect}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {inspections.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
-                    {inspecting ? 'Inspecting files for privacy exposures...' : 'No files in workspace to inspect.'}
+                    {inspecting ? t.privacy.inspecting : t.privacy.emptyTable}
                   </td>
                 </tr>
               ) : (
                 inspections.map((ins) => {
-                const hasIssues = ins.hasExifLocation || ins.detectedSecrets.length > 0 || ins.cleanableMetadata.length > 0;
+                  const hasIssues =
+                    ins.hasExifLocation || ins.detectedSecrets.length > 0 || ins.cleanableMetadata.length > 0;
 
-                return (
-                  <tr
-                    key={ins.file.id}
-                    className={`hover:bg-slate-800/40 transition-colors ${
-                      hasIssues && !ins.sanitized ? 'bg-purple-950/10' : ''
-                    }`}
-                  >
-                    <td className="py-2.5 px-4">
-                      <div className="font-medium text-slate-200 truncate max-w-xs">
-                        {ins.file.name}
-                      </div>
-                      <div className="text-[11px] font-mono text-slate-500 truncate max-w-xs">
-                        {ins.file.relativePath}
-                      </div>
-                    </td>
-
-                    <td className="py-2.5 px-4">
-                      {ins.sanitized ? (
-                        <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Sanitized & Metadata Stripped</span>
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5">
-                          {ins.hasExifLocation && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800 text-amber-300 text-[11px]">
-                              <MapPin className="w-3 h-3" />
-                              <span>GPS Coordinates Tagged</span>
-                            </span>
-                          )}
-                          {ins.detectedSecrets.map((s, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/60 border border-rose-800 text-rose-300 text-[11px] font-mono"
-                            >
-                              <KeyRound className="w-3 h-3" />
-                              <span>{s.type}: {s.match}</span>
-                            </span>
-                          ))}
-                          {ins.cleanableMetadata.length > 0 && !ins.hasExifLocation && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-[11px]">
-                              <span>{ins.cleanableMetadata.length} author tags</span>
-                            </span>
-                          )}
-                          {!hasIssues && (
-                            <span className="text-slate-500 text-[11px]">Clean</span>
-                          )}
+                  return (
+                    <tr
+                      key={ins.file.id}
+                      className={`hover:bg-slate-800/40 transition-colors ${
+                        hasIssues && !ins.sanitized ? 'bg-purple-950/10' : ''
+                      }`}
+                    >
+                      <td className="py-2.5 px-4">
+                        <div className="font-medium text-slate-200 truncate max-w-xs">
+                          {ins.file.name}
                         </div>
-                      )}
-                    </td>
+                        <div className="text-[11px] font-mono text-slate-500 truncate max-w-xs">
+                          {ins.file.relativePath}
+                        </div>
+                      </td>
 
-                    <td className="py-2.5 px-4 text-xs font-mono">
-                      {ins.sanitized ? (
-                        <span className="text-emerald-400">Clean</span>
-                      ) : hasIssues ? (
-                        <span className="text-purple-400 font-semibold">Exposed</span>
-                      ) : (
-                        <span className="text-slate-500">Verified</span>
-                      )}
-                    </td>
+                      <td className="py-2.5 px-4">
+                        {ins.sanitized ? (
+                          <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{t.privacy.sanitizedStatus}</span>
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {ins.hasExifLocation && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800 text-amber-300 text-[11px]">
+                                <MapPin className="w-3 h-3" />
+                                <span>{t.privacy.gpsTagged}</span>
+                              </span>
+                            )}
+                            {ins.detectedSecrets.map((s, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/60 border border-rose-800 text-rose-300 text-[11px] font-mono"
+                              >
+                                <KeyRound className="w-3 h-3" />
+                                <span>{s.type}: {s.match}</span>
+                              </span>
+                            ))}
+                            {ins.cleanableMetadata.length > 0 && !ins.hasExifLocation && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-[11px]">
+                                <span>{t.privacy.authorTags(ins.cleanableMetadata.length)}</span>
+                              </span>
+                            )}
+                            {!hasIssues && (
+                              <span className="text-slate-500 text-[11px]">{t.privacy.clean}</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
 
-                    <td className="py-2.5 px-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setActiveInspect(ins)}
-                        className="p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
-                        title="View privacy details"
-                      >
-                        <Eye className="w-4 h-4 mx-auto" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }))}
+                      <td className="py-2.5 px-4 text-xs font-mono">
+                        {ins.sanitized ? (
+                          <span className="text-emerald-400">{t.privacy.clean}</span>
+                        ) : hasIssues ? (
+                          <span className="text-purple-400 font-semibold">{t.privacy.exposed}</span>
+                        ) : (
+                          <span className="text-slate-500">{t.privacy.verified}</span>
+                        )}
+                      </td>
+
+                      <td className="py-2.5 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setActiveInspect(ins)}
+                          className="p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
+                          title={t.privacy.viewDetails}
+                        >
+                          <Eye className="w-4 h-4 mx-auto" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -305,12 +305,12 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
 
             <div className="py-4 space-y-3 text-xs">
               <div>
-                <span className="text-slate-500 block">Exposed Metadata Fields</span>
+                <span className="text-slate-500 block">{t.privacy.exposedMetaFields}</span>
                 <ul className="mt-1 space-y-1 text-slate-300 list-disc list-inside">
                   {activeInspect.cleanableMetadata.length > 0 ? (
                     activeInspect.cleanableMetadata.map((m, idx) => <li key={idx}>{m}</li>)
                   ) : (
-                    <li className="text-slate-500 list-none">No metadata tags identified.</li>
+                    <li className="text-slate-500 list-none">{t.privacy.noMetaTags}</li>
                   )}
                 </ul>
               </div>
@@ -318,7 +318,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
               {activeInspect.detectedSecrets.length > 0 && (
                 <div>
                   <span className="text-rose-400 block font-semibold mb-1">
-                    Detected Sensitive Keys:
+                    {t.privacy.detectedSensitiveKeys}
                   </span>
                   <div className="space-y-1.5">
                     {activeInspect.detectedSecrets.map((s, idx) => (
@@ -341,7 +341,7 @@ export const PrivacyScrubberModule: React.FC<PrivacyScrubberModuleProps> = ({
                 onClick={() => setActiveInspect(null)}
                 className="px-4 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
               >
-                Close
+                {t.privacy.close}
               </button>
             </div>
           </div>

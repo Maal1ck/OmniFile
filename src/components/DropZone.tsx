@@ -13,6 +13,7 @@ import {
   getFileExtension,
   classifyFileCategory,
 } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface DropZoneProps {
   onFilesAdded: (newFiles: VirtualFile[]) => void;
@@ -29,6 +30,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t } = useAppSettings();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -51,8 +53,8 @@ export const DropZone: React.FC<DropZoneProps> = ({
     setIsDragging(false);
 
     if (onStartProgress) {
-      onStartProgress('Ingesting Dropped Files & Directories...');
-      onUpdateProgress?.(5, 'Parsing directory entries...');
+      onStartProgress(t.dropzone.ingestingDrop);
+      onUpdateProgress?.(5, t.dropzone.parsingEntries);
     }
 
     try {
@@ -60,7 +62,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
         const extracted = await readFilesFromDataTransfer(
           e.dataTransfer.items,
           (percent, currentItem, count) => {
-            onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
+            onUpdateProgress?.(percent, `${currentItem} (${count} ${t.filesCount})`);
           }
         );
         if (extracted.length > 0) {
@@ -70,7 +72,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
         const parsed = parseFileList(
           e.dataTransfer.files,
           (percent, currentItem, count) => {
-            onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
+            onUpdateProgress?.(percent, `${currentItem} (${count} ${t.filesCount})`);
           }
         );
         if (parsed.length > 0) {
@@ -87,12 +89,12 @@ export const DropZone: React.FC<DropZoneProps> = ({
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       if (onStartProgress) {
-        onStartProgress('Ingesting Selected Files...');
+        onStartProgress(t.dropzone.ingestingSelected);
       }
       const parsed = parseFileList(
         e.target.files,
         (percent, currentItem, count) => {
-          onUpdateProgress?.(percent, `${currentItem} (${count} files)`);
+          onUpdateProgress?.(percent, `${currentItem} (${count} ${t.filesCount})`);
         }
       );
       onFilesAdded(parsed);
@@ -104,7 +106,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
   };
 
   const handleOpenFolderNative = async () => {
-    // Check if Chromium / Windows Native Directory Picker is available
     if ('showDirectoryPicker' in window) {
       try {
         const dirHandle = await (window as unknown as {
@@ -112,14 +113,13 @@ export const DropZone: React.FC<DropZoneProps> = ({
         }).showDirectoryPicker();
 
         if (onStartProgress) {
-          onStartProgress(`Ingesting Directory: ${dirHandle.name}...`);
+          onStartProgress(t.dropzone.ingestingDir(dirHandle.name));
         }
 
         const gatheredFiles: VirtualFile[] = [];
         let count = 0;
         let lastReport = 0;
 
-        // Fast parallel directory entry processor
         const processHandleQueue = async (
           handles: { handle: FileSystemDirectoryHandle; path: string }[]
         ) => {
@@ -141,13 +141,11 @@ export const DropZone: React.FC<DropZoneProps> = ({
                       lastReport = now;
                       onUpdateProgress?.(
                         Math.min(98, Math.round((count / (count + 10)) * 100)),
-                        `${file.name} (${count} files indexed)`
+                        `${file.name} (${count} ${t.dropzone.filesIndexedSuffix})`
                       );
                     }
                     const relativePath = current.path ? `${current.path}/${file.name}` : file.name;
                     const ext = getFileExtension(file.name);
-                    const driveMatch = relativePath.match(/^([A-Za-z]:)/);
-                    const drive = driveMatch ? driveMatch[1].toUpperCase() : 'C:';
 
                     gatheredFiles.push({
                       id: `native-${Date.now()}-${count}-${Math.random().toString(36).slice(2, 6)}`,
@@ -157,10 +155,9 @@ export const DropZone: React.FC<DropZoneProps> = ({
                       type: file.type,
                       extension: ext,
                       lastModified: file.lastModified,
-                      category: classifyFileCategory(ext),
+                      category: classifyFileCategory(ext, file.name),
                       selected: true,
                       content: file,
-                      drive,
                     });
                   })
                 );
@@ -187,7 +184,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
         }
         return;
       } catch (err) {
-        // User canceled or denied permission, fall back to input
         if (onFinishProgress) onFinishProgress();
         if ((err as Error).name !== 'AbortError') {
           folderInputRef.current?.click();
@@ -196,7 +192,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
       }
     }
 
-    // Standard fallback
     folderInputRef.current?.click();
   };
 
@@ -242,14 +237,14 @@ export const DropZone: React.FC<DropZoneProps> = ({
 
         <h3 className="text-lg font-semibold text-white tracking-tight mb-1">
           {isDragging
-            ? 'Release to ingest files & folder tree'
+            ? t.dropzone.releaseTitle
             : hasFiles
-            ? 'Drop additional files or folders here'
-            : 'Drop your files or folders to get started'}
+            ? t.dropzone.addMoreTitle
+            : t.dropzone.emptyTitle}
         </h3>
 
         <p className="text-xs text-slate-400 mb-6 max-w-md">
-          Supports nested directory trees, batch multi-select, PDF documents, media, code, and archives. All processing runs 100% locally on your machine.
+          {t.dropzone.subtitle}
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
@@ -259,7 +254,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
             className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg transition-colors cursor-pointer shadow-sm"
           >
             <FolderOpen className="w-4 h-4 text-cyan-400" />
-            <span>Select Directory / Folder</span>
+            <span>{t.dropzone.selectFolder}</span>
           </button>
 
           <button
@@ -268,18 +263,18 @@ export const DropZone: React.FC<DropZoneProps> = ({
             className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-200 bg-slate-850 hover:bg-slate-800 border border-slate-700 rounded-lg transition-colors cursor-pointer"
           >
             <FilePlus className="w-4 h-4 text-slate-400" />
-            <span>Select Files</span>
+            <span>{t.dropzone.selectFiles}</span>
           </button>
         </div>
 
         <div className="mt-6 flex items-center gap-6 text-[11px] text-slate-400">
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Zero server upload · 100% Client-side</span>
+            <span>{t.dropzone.zeroUpload}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-            <span>Native Windows FileSystem Access API</span>
+            <span>{t.dropzone.nativeApi}</span>
           </div>
         </div>
       </div>

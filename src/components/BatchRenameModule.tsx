@@ -5,7 +5,6 @@ import {
   Sparkles,
   Download,
   AlertTriangle,
-  RotateCcw,
 } from 'lucide-react';
 import { VirtualFile, RenameConfig, RenameMode } from '../types/fileSystem';
 import {
@@ -13,6 +12,7 @@ import {
   createZipArchive,
   triggerFileDownload,
 } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface BatchRenameModuleProps {
   files: VirtualFile[];
@@ -29,6 +29,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t } = useAppSettings();
   const [config, setConfig] = useState<RenameConfig>({
     mode: 'template',
     template: 'Doc_{YYYY}-{MM}_{num:3}',
@@ -81,7 +82,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
   };
 
   const handleExportRenamedZip = async () => {
-    onStartProgress('Compressing & Exporting Renamed Files...');
+    onStartProgress(t.rename.exportProgress);
     const itemsToZip = previewResults.map((r) => ({
       path: r.collisionResolvedName,
       file: r.file,
@@ -106,11 +107,9 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-white tracking-tight">Batch File Renamer</h2>
+              <h2 className="text-lg font-bold text-white tracking-tight">{t.rename.title}</h2>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Construct dynamic patterns, regex substitutions, and casing transformations with instant live preview.
-            </p>
+            <p className="text-xs text-slate-400 mt-1">{t.rename.subtitle}</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -121,7 +120,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Apply to Workspace ({modifiedCount})</span>
+              <span>{t.rename.applyBtn(modifiedCount)}</span>
             </button>
 
             <button
@@ -130,34 +129,29 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Download className="w-4 h-4 text-cyan-400" />
-              <span>Export as ZIP</span>
+              <span>{t.rename.exportZip}</span>
             </button>
           </div>
         </div>
 
-        {/* Mode Selector Tabs (Clean segmented control buttons) */}
+        {/* Mode Selector Tabs */}
         <div className="pt-6">
-          <label className="text-xs font-semibold text-slate-300 block mb-2">Rename Strategy</label>
+          <label className="text-xs font-semibold text-slate-300 block mb-2">{t.rename.strategyLabel}</label>
           <div className="flex flex-wrap gap-2 p-1 bg-slate-950 border border-slate-800 rounded-lg">
-            {[
-              { id: 'template', label: 'Pattern Template' },
-              { id: 'replace', label: 'Search & Replace / Regex' },
-              { id: 'prefix_suffix', label: 'Prefix & Suffix' },
-              { id: 'case', label: 'Case Conversion' },
-              { id: 'numbering', label: 'Sequence Numbering' },
-              { id: 'date', label: 'Date Stamping' },
-            ].map((tab) => (
+            {(
+              ['template', 'replace', 'prefix_suffix', 'case', 'numbering', 'date'] as RenameMode[]
+            ).map((modeId) => (
               <button
-                key={tab.id}
+                key={modeId}
                 type="button"
-                onClick={() => setConfig({ ...config, mode: tab.id as RenameMode })}
+                onClick={() => setConfig({ ...config, mode: modeId })}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                  config.mode === tab.id
+                  config.mode === modeId
                     ? 'bg-slate-800 text-cyan-400 shadow-sm border border-slate-700'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {tab.label}
+                {t.rename.modes[modeId]}
               </button>
             ))}
           </div>
@@ -169,7 +163,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Template Pattern
+                  {t.rename.templateLabel}
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -177,21 +171,20 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                     value={config.template}
                     onChange={(e) => setConfig({ ...config, template: e.target.value })}
                     className="flex-1 bg-slate-950 border border-slate-800 text-slate-100 font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500"
-                    placeholder="e.g. Invoice_{YYYY}-{MM}_{num:3}"
+                    placeholder={t.rename.templatePlaceholder}
                   />
                 </div>
               </div>
 
-              {/* Token Quick Inserts */}
               <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
-                <span className="text-[11px] text-slate-500">Insert token:</span>
+                <span className="text-[11px] text-slate-500">{t.rename.insertToken}</span>
                 {[
-                  { token: '[name]', desc: 'Original Name' },
-                  { token: '{num:3}', desc: 'Padded # (001)' },
-                  { token: '{YYYY}', desc: 'Year' },
-                  { token: '{MM}', desc: 'Month' },
-                  { token: '{DD}', desc: 'Day' },
-                  { token: '[ext]', desc: 'Extension' },
+                  { token: '[name]', desc: t.rename.tokens.name },
+                  { token: '{num:3}', desc: t.rename.tokens.num },
+                  { token: '{YYYY}', desc: t.rename.tokens.year },
+                  { token: '{MM}', desc: t.rename.tokens.month },
+                  { token: '{DD}', desc: t.rename.tokens.day },
+                  { token: '[ext]', desc: t.rename.tokens.ext },
                 ].map((item) => (
                   <button
                     key={item.token}
@@ -210,13 +203,13 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
           {config.mode === 'replace' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Find Text / Regex</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.findLabel}</label>
                 <input
                   type="text"
                   value={config.search}
                   onChange={(e) => setConfig({ ...config, search: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 text-slate-100 font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500"
-                  placeholder="Text to replace..."
+                  placeholder={t.rename.findPlaceholder}
                 />
                 <div className="mt-2 flex items-center gap-4 text-xs">
                   <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
@@ -226,7 +219,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                       onChange={(e) => setConfig({ ...config, useRegex: e.target.checked })}
                       className="rounded border-slate-700 text-cyan-500 focus:ring-0"
                     />
-                    <span>Use Regular Expression</span>
+                    <span>{t.rename.useRegex}</span>
                   </label>
                   <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
                     <input
@@ -235,19 +228,19 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                       onChange={(e) => setConfig({ ...config, matchCase: e.target.checked })}
                       className="rounded border-slate-700 text-cyan-500 focus:ring-0"
                     />
-                    <span>Match Case</span>
+                    <span>{t.rename.matchCase}</span>
                   </label>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Replace With</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.replaceLabel}</label>
                 <input
                   type="text"
                   value={config.replace}
                   onChange={(e) => setConfig({ ...config, replace: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 text-slate-100 font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500"
-                  placeholder="Replacement string..."
+                  placeholder={t.rename.replacePlaceholder}
                 />
               </div>
             </div>
@@ -256,7 +249,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
           {config.mode === 'prefix_suffix' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Add Prefix</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.addPrefix}</label>
                 <input
                   type="text"
                   value={config.prefix}
@@ -266,7 +259,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Add Suffix</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.addSuffix}</label>
                 <input
                   type="text"
                   value={config.suffix}
@@ -280,7 +273,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
 
           {config.mode === 'case' && (
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-2">Target Casing</label>
+              <label className="text-xs font-semibold text-slate-300 block mb-2">{t.rename.targetCasing}</label>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                 {[
                   { id: 'lower', label: 'lowercase' },
@@ -310,7 +303,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
           {config.mode === 'numbering' && (
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Start Number</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.startNumber}</label>
                 <input
                   type="number"
                   value={config.startNumber}
@@ -319,7 +312,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Step Increment</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.stepIncrement}</label>
                 <input
                   type="number"
                   value={config.stepNumber}
@@ -328,7 +321,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Digit Padding</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">{t.rename.digitPadding}</label>
                 <input
                   type="number"
                   min={1}
@@ -343,7 +336,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
 
           {config.mode === 'date' && (
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-2">Date Format</label>
+              <label className="text-xs font-semibold text-slate-300 block mb-2">{t.rename.dateFormat}</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {['YYYY-MM-DD', 'YYYYMMDD', 'DD-MM-YYYY', 'YYYY-MM'].map((fmt) => (
                   <button
@@ -366,7 +359,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
 
         {/* Secondary Options */}
         <div className="mt-6 pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -375,11 +368,11 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                   onChange={(e) => setConfig({ ...config, includeParentFolders: e.target.checked })}
                   className="rounded border-slate-700 text-cyan-500 focus:ring-0"
                 />
-                <span>Include parent folders in name</span>
+                <span>{t.rename.includeParents}</span>
               </label>
               {config.includeParentFolders && (
                 <label className="flex items-center gap-2">
-                  <span>Levels</span>
+                  <span>{t.rename.levels}</span>
                   <input
                     type="number"
                     min={1}
@@ -388,7 +381,7 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                       setConfig({ ...config, parentFolderLevels: Math.max(1, Number(e.target.value)) })
                     }
                     className="w-16 bg-slate-950 border border-slate-800 text-slate-100 font-mono text-xs rounded px-2 py-1"
-                    aria-label="Parent folder levels to include"
+                    aria-label={t.rename.levels}
                   />
                 </label>
               )}
@@ -400,21 +393,21 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                 onChange={(e) => setConfig({ ...config, changeExtension: e.target.checked })}
                 className="rounded border-slate-700 text-cyan-500 focus:ring-0"
               />
-              <span>Change file extension to:</span>
+              <span>{t.rename.changeExt}</span>
             </label>
             {config.changeExtension && (
               <input
                 type="text"
                 value={config.newExtension}
                 onChange={(e) => setConfig({ ...config, newExtension: e.target.value })}
-                placeholder="e.g. pdf"
+                placeholder="pdf"
                 className="w-20 bg-slate-950 border border-slate-800 text-slate-100 font-mono text-xs rounded px-2 py-1"
               />
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <span>Collision Policy:</span>
+            <span>{t.rename.collisionPolicy}</span>
             <select
               value={config.collisionResolution}
               onChange={(e) =>
@@ -425,8 +418,8 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
               }
               className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded px-2 py-1"
             >
-              <option value="number_suffix">Auto-increment: name (1).ext</option>
-              <option value="keep_original">Retain original name on conflict</option>
+              <option value="number_suffix">{t.rename.collisionIncrement}</option>
+              <option value="keep_original">{t.rename.collisionKeep}</option>
             </select>
           </div>
         </div>
@@ -436,17 +429,19 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-300">
-            <span className="font-semibold text-slate-100">Live Transformation Preview</span>
+            <span className="font-semibold text-slate-100">{t.rename.previewTitle}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">{previewResults.length} files</span>
+            <span className="font-mono tabular-nums">{previewResults.length} {t.filesCount}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums text-cyan-400">{modifiedCount} modified</span>
+            <span className="font-mono tabular-nums text-cyan-400">
+              {modifiedCount} {t.rename.modified}
+            </span>
             {collisionCount > 0 && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="flex items-center gap-1 font-mono tabular-nums text-amber-400">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  {collisionCount} resolved collisions
+                  {collisionCount} {t.rename.resolvedCollisions}
                 </span>
               </>
             )}
@@ -457,17 +452,17 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-2.5 px-4">Original Name & Path</th>
+                <th className="py-2.5 px-4">{t.rename.colOriginal}</th>
                 <th className="py-2.5 px-4 w-10 text-center"></th>
-                <th className="py-2.5 px-4">Resulting Name</th>
-                <th className="py-2.5 px-4 w-32 text-right">Status</th>
+                <th className="py-2.5 px-4">{t.rename.colResult}</th>
+                <th className="py-2.5 px-4 w-32 text-right">{t.rename.colStatus}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {previewResults.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
-                    No files loaded in workspace. Add files in Workspace tab to preview batch renames.
+                    {t.rename.emptyTable}
                   </td>
                 </tr>
               ) : (
@@ -478,28 +473,29 @@ export const BatchRenameModule: React.FC<BatchRenameModuleProps> = ({
                       item.isModified ? 'bg-cyan-950/10' : ''
                     }`}
                   >
-                  <td className="py-2.5 px-4 font-mono text-slate-400 truncate max-w-xs">
-                    {item.originalPath}
-                  </td>
-                  <td className="py-2.5 px-4 text-center text-slate-500">
-                    <ArrowRight className="w-3.5 h-3.5 mx-auto" />
-                  </td>
-                  <td className="py-2.5 px-4 font-mono font-medium truncate max-w-sm">
-                    <span className={item.isModified ? 'text-cyan-300 font-semibold' : 'text-slate-300'}>
-                      {item.collisionResolvedName}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 text-right">
-                    {item.hasCollision ? (
-                      <span className="text-[11px] text-amber-400">Auto-numbered</span>
-                    ) : item.isModified ? (
-                      <span className="text-[11px] text-cyan-400">Renamed</span>
-                    ) : (
-                      <span className="text-[11px] text-slate-500">Unchanged</span>
-                    )}
-                  </td>
-                </tr>
-              )))}
+                    <td className="py-2.5 px-4 font-mono text-slate-400 truncate max-w-xs">
+                      {item.originalPath}
+                    </td>
+                    <td className="py-2.5 px-4 text-center text-slate-500">
+                      <ArrowRight className="w-3.5 h-3.5 mx-auto" />
+                    </td>
+                    <td className="py-2.5 px-4 font-mono font-medium truncate max-w-sm">
+                      <span className={item.isModified ? 'text-cyan-300 font-semibold' : 'text-slate-300'}>
+                        {item.collisionResolvedName}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right">
+                      {item.hasCollision ? (
+                        <span className="text-[11px] text-amber-400">{t.rename.statusAutoNumbered}</span>
+                      ) : item.isModified ? (
+                        <span className="text-[11px] text-cyan-400">{t.rename.statusRenamed}</span>
+                      ) : (
+                        <span className="text-[11px] text-slate-500">{t.rename.statusUnchanged}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

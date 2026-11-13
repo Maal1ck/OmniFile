@@ -6,7 +6,7 @@
   }
 
   body {
-    @apply bg-slate-950 text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden;
+    @apply bg-slate-950 text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden transition-colors duration-200;
   }
 
   code, pre, .font-mono {
@@ -15,7 +15,7 @@
   }
 }
 
-/* Custom desktop scrollbar */
+/* Custom desktop scrollbar (Dark default) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -32,4 +32,229 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.6);
+}
+
+/* =========================================================================
+   LIGHT THEME ADAPTIVE OVERRIDES (html.light)
+   Ensures all surfaces, cards, tables, modals, inputs, badges, and contrast
+   adapt cleanly across dark and light modes.
+   ========================================================================= */
+html.light body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Main dark surfaces -> Crisp Light Fluent surfaces */
+html.light .bg-slate-950,
+html.light .bg-slate-950\/60,
+html.light .bg-slate-950\/50,
+html.light .bg-slate-950\/40,
+html.light .bg-slate-950\/20,
+html.light .bg-slate-950\/80 {
+  background-color: #f8fafc !important;
+}
+
+html.light .bg-slate-900,
+html.light .bg-slate-900\/95,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/50,
+html.light .bg-slate-900\/40 {
+  background-color: #ffffff !important;
+}
+
+html.light .bg-slate-800,
+html.light .bg-slate-800\/90,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-850 {
+  background-color: #e2e8f0 !important;
+}
+
+html.light .hover\:bg-slate-800:hover,
+html.light .hover\:bg-slate-800\/80:hover,
+html.light .hover\:bg-slate-800\/40:hover,
+html.light .hover\:bg-slate-800\/30:hover,
+html.light .hover\:bg-slate-800\/20:hover,
+html.light .hover\:bg-slate-850:hover,
+html.light .hover\:bg-slate-750:hover,
+html.light .hover\:bg-slate-700:hover {
+  background-color: #cbd5e1 !important;
+}
+
+/* Borders */
+html.light .border-slate-800,
+html.light .border-slate-800\/80,
+html.light .border-slate-800\/60,
+html.light .border-slate-850,
+html.light .border-slate-750,
+html.light .border-slate-700,
+html.light .border-slate-600 {
+  border-color: #cbd5e1 !important;
+}
+
+html.light .divide-slate-800 > :not(:last-child),
+html.light .divide-slate-800\/60 > :not(:last-child),
+html.light .divide-slate-850 > :not(:last-child) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Typography (preserve white text inside colored gradient/solid action buttons) */
+html.light .text-white:not([class*="bg-cyan-6"]):not([class*="bg-blue-6"]):not([class*="bg-emerald-6"]):not([class*="bg-rose-6"]):not([class*="bg-amber-6"]):not([class*="bg-purple-6"]):not([class*="bg-indigo-6"]):not([class*="from-"]) {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-100:not([class*="from-"]):not([class*="bg-cyan-6"]) {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-200:not([class*="from-"]):not([class*="bg-cyan-6"]) {
+  color: #1e293b !important;
+}
+
+html.light .text-slate-300 {
+  color: #334155 !important;
+}
+
+html.light .text-slate-400 {
+  color: #475569 !important;
+}
+
+html.light .text-slate-500 {
+  color: #64748b !important;
+}
+
+html.light .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+html.light .hover\:text-slate-200:hover,
+html.light .hover\:text-slate-300:hover {
+  color: #0f172a !important;
+}
+
+/* Colored text & badges in Light Mode for strong contrast */
+html.light .text-cyan-300,
+html.light .text-cyan-400 {
+  color: #0284c7 !important;
+}
+
+html.light .text-emerald-200,
+html.light .text-emerald-300,
+html.light .text-emerald-400 {
+  color: #059669 !important;
+}
+
+html.light .text-amber-300,
+html.light .text-amber-400 {
+  color: #d97706 !important;
+}
+
+html.light .text-rose-300,
+html.light .text-rose-400 {
+  color: #e11d48 !important;
+}
+
+html.light .text-purple-300,
+html.light .text-purple-400 {
+  color: #7c3aed !important;
+}
+
+html.light .text-blue-300,
+html.light .text-blue-400 {
+  color: #2563eb !important;
+}
+
+/* Soft tinted backgrounds & badges */
+html.light .bg-cyan-950,
+html.light .bg-cyan-950\/70,
+html.light .bg-cyan-950\/60,
+html.light .bg-cyan-950\/20,
+html.light .bg-cyan-950\/15,
+html.light .bg-cyan-950\/10 {
+  background-color: #e0f2fe !important;
+}
+
+html.light .border-cyan-800,
+html.light .border-cyan-800\/60,
+html.light .border-cyan-500\/40 {
+  border-color: #7dd3fc !important;
+}
+
+html.light .bg-amber-950\/70,
+html.light .bg-amber-950\/60,
+html.light .bg-amber-950\/50 {
+  background-color: #fef3c7 !important;
+}
+
+html.light .border-amber-800,
+html.light .border-amber-900 {
+  border-color: #fcd34d !important;
+}
+
+html.light .bg-emerald-950\/80,
+html.light .bg-emerald-950\/70,
+html.light .bg-emerald-950\/60,
+html.light .bg-emerald-950\/40,
+html.light .bg-emerald-950\/20,
+html.light .bg-emerald-900\/40 {
+  background-color: #d1fae5 !important;
+}
+
+html.light .border-emerald-800,
+html.light .border-emerald-800\/60,
+html.light .border-emerald-900\/50 {
+  border-color: #6ee7b7 !important;
+}
+
+html.light .bg-rose-950\/60,
+html.light .bg-rose-950\/50,
+html.light .bg-rose-950\/40,
+html.light .bg-rose-950\/30 {
+  background-color: #ffe4e6 !important;
+}
+
+html.light .border-rose-800,
+html.light .border-rose-900\/50 {
+  border-color: #fda4af !important;
+}
+
+html.light .bg-purple-950\/60,
+html.light .bg-purple-950\/10 {
+  background-color: #f3e8ff !important;
+}
+
+html.light .border-purple-800,
+html.light .border-purple-800\/60 {
+  border-color: #d8b4fe !important;
+}
+
+html.light .bg-blue-950\/60 {
+  background-color: #dbeafe !important;
+}
+
+html.light .border-blue-800 {
+  border-color: #93c5fd !important;
+}
+
+/* Placeholder & form inputs in light mode */
+html.light input,
+html.light select,
+html.light textarea {
+  color: #0f172a;
+}
+
+html.light input::placeholder {
+  color: #94a3b8;
 }

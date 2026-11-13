@@ -15,9 +15,9 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'icon.svg'],
         manifest: {
           id: '/',
-          name: 'OmniFile Desktop - File Utility',
-          short_name: 'OmniFile',
-          description: 'Windows desktop file utility for batch renaming, compression, tree flattening, format/date sorting, and cloud sync.',
+          name: 'OmniFile Desktop by Maodo',
+          short_name: 'OmniFile Maodo',
+          description: 'Windows desktop file utility by Maodo for batch renaming, compression, tree flattening, geospatial dataset grouping, and cloud sync.',
           theme_color: '#0f172a',
           background_color: '#0f172a',
           display: 'standalone',

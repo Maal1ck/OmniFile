@@ -1,5 +1,6 @@
 import React from 'react';
 import { Loader2, CheckCircle2 } from 'lucide-react';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface ExecutionModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({
   isComplete,
   onClose,
 }) => {
+  const { t } = useAppSettings();
   if (!isOpen) return null;
 
   return (
@@ -36,7 +38,7 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({
           <div>
             <h4 className="text-base font-bold text-white tracking-tight">{title}</h4>
             <p className="text-xs text-slate-400">
-              {isComplete ? 'Operation completed successfully.' : 'Loading and processing files...'}
+              {isComplete ? t.executionModal.completed : t.executionModal.loading}
             </p>
           </div>
         </div>
@@ -46,7 +48,7 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({
           <div className="flex items-center justify-between text-xs font-mono">
             <span className="text-slate-300 font-medium truncate max-w-[260px] flex items-center gap-1.5">
               {!isComplete && <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />}
-              <span>{currentItem || 'Processing pipeline...'}</span>
+              <span>{currentItem || t.executionModal.processingPipeline}</span>
             </span>
             <span className="text-cyan-400 tabular-nums font-bold text-sm">{percent}%</span>
           </div>
@@ -63,8 +65,8 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({
           </div>
 
           <div className="flex justify-between items-center text-[11px] text-slate-500 font-mono pt-1">
-            <span>{isComplete ? 'All items processed' : 'Active task running in background'}</span>
-            <span>{percent === 100 ? 'Complete' : 'In Progress'}</span>
+            <span>{isComplete ? t.executionModal.allProcessed : t.executionModal.activeTask}</span>
+            <span>{percent === 100 ? t.executionModal.complete : t.executionModal.inProgress}</span>
           </div>
         </div>
 
@@ -75,7 +77,7 @@ export const ExecutionModal: React.FC<ExecutionModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
             >
-              Done
+              {t.executionModal.done}
             </button>
           </div>
         )}

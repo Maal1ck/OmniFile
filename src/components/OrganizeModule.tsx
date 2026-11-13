@@ -9,16 +9,17 @@ import {
   Trash2,
   Calendar,
   Layers,
-  FileCheck,
+  Globe,
 } from 'lucide-react';
 import { FileCategory, VirtualFile, OrganizeConfig, OrganizeStrategy } from '../types/fileSystem';
 import {
-  CATEGORY_FOLDER_NAMES,
+  analyzeComplementaryBundles,
   classifyFileCategory,
   computeSmartOrganization,
   createZipArchive,
   triggerFileDownload,
 } from '../utils/fileHelpers';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface OrganizeModuleProps {
   files: VirtualFile[];
@@ -35,6 +36,8 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
   onUpdateProgress,
   onFinishProgress,
 }) => {
+  const { t, language } = useAppSettings();
+
   const [config, setConfig] = useState<OrganizeConfig>({
     strategy: 'category_date',
     dateFormat: 'YYYY/MM',
@@ -45,6 +48,8 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
     folderPrefix: '',
     folderSuffix: '',
     collisionResolution: 'number_suffix',
+    groupComplementaryFiles: true,
+    bundleGeospatialSubfolders: true,
     customRules: [
       {
         id: 'rule-tax',
@@ -65,13 +70,28 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
     return sel.length > 0 ? sel : files;
   }, [files]);
 
+  const includedTypeFiles = useMemo(
+    () =>
+      selectedFiles.filter(
+        (file) => !config.excludedExtensions.includes(file.extension.toLowerCase())
+      ),
+    [selectedFiles, config.excludedExtensions]
+  );
+
+  // Detected geospatial & complementary bundles
+  const detectedBundles = useMemo(() => {
+    return analyzeComplementaryBundles(includedTypeFiles).bundles;
+  }, [includedTypeFiles]);
+
+  const bundledFileCount = useMemo(
+    () => detectedBundles.reduce((sum, b) => sum + b.files.length, 0),
+    [detectedBundles]
+  );
+
   // Compute live mapping
   const previewResults = useMemo(() => {
-    const includedTypeFiles = selectedFiles.filter(
-      (file) => !config.excludedExtensions.includes(file.extension.toLowerCase())
-    );
     return computeSmartOrganization(includedTypeFiles, config);
-  }, [selectedFiles, config]);
+  }, [includedTypeFiles, config]);
 
   const extensionChoices = useMemo(() => {
     const counts = new Map<string, number>();
@@ -110,6 +130,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
         return {
           ...file,
           relativePath: match.targetPath,
+          category: match.category,
         };
       }
       return file;
@@ -119,7 +140,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
   };
 
   const handleExportOrganizedZip = async () => {
-    onStartProgress('Structuring & Exporting Organized Folders...');
+    onStartProgress(t.organize.exportProgress);
     const itemsToZip = includedResults.map((r) => ({
       path: r.targetPath,
       file: r.file,
@@ -169,6 +190,21 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
     });
   };
 
+  const formatBundleBadge = (kind: string, count: number) => {
+    if (language === 'fr') {
+      if (kind === 'shapefile') return `Shapefile SIG (${count} fichiers)`;
+      if (kind === 'mapinfo') return `MapInfo SIG (${count} fichiers)`;
+      if (kind === 'georef_raster') return `Raster Géoréférencé (${count} fichiers)`;
+      if (kind === 'geospatial_dataset') return `Jeu de données SIG (${count} fichiers)`;
+      return `Lot complémentaire (${count} fichiers)`;
+    }
+    if (kind === 'shapefile') return `GIS Shapefile (${count} files)`;
+    if (kind === 'mapinfo') return `GIS MapInfo (${count} files)`;
+    if (kind === 'georef_raster') return `Georeferenced Raster (${count} files)`;
+    if (kind === 'geospatial_dataset') return `GIS Dataset (${count} files)`;
+    return `Complementary bundle (${count} files)`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Controls Box */}
@@ -178,11 +214,11 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             <div className="flex items-center gap-2">
               <FolderSync className="w-5 h-5 text-cyan-400" />
               <h2 className="text-lg font-bold text-white tracking-tight">
-                Automated Document & File Organizer
+                {t.organize.title}
               </h2>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Automatically route and sort files into structured directory paths based on file format, extension, and creation/modified dates.
+              {t.organize.subtitle}
             </p>
           </div>
 
@@ -194,7 +230,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Apply Organization to Workspace</span>
+              <span>{t.organize.applyBtn}</span>
             </button>
 
             <button
@@ -204,20 +240,79 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
               className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Download className="w-4 h-4 text-cyan-400" />
-              <span>Export Organized ZIP</span>
+              <span>{t.organize.exportBtn}</span>
             </button>
           </div>
         </div>
 
+        {/* Geospatial & Complementary File Bundling Panel */}
+        <div className="mt-6 p-4 rounded-xl bg-slate-950 border border-cyan-800/50 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span className="text-xs font-bold text-slate-100">{t.organize.gisPanelTitle}</span>
+            </div>
+            <span className="text-[11px] font-mono text-cyan-400">
+              {detectedBundles.length > 0
+                ? t.organize.gisDetectedSummary(detectedBundles.length, bundledFileCount)
+                : t.organize.gisNoBundles}
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-xs">
+            <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.groupComplementaryFiles !== false}
+                onChange={(e) =>
+                  setConfig({ ...config, groupComplementaryFiles: e.target.checked })
+                }
+                className="accent-cyan-500"
+              />
+              <span>{t.organize.gisToggleGroup}</span>
+            </label>
+
+            <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.bundleGeospatialSubfolders !== false}
+                disabled={config.groupComplementaryFiles === false}
+                onChange={(e) =>
+                  setConfig({ ...config, bundleGeospatialSubfolders: e.target.checked })
+                }
+                className="accent-cyan-500"
+              />
+              <span>{t.organize.gisToggleSubfolder}</span>
+            </label>
+          </div>
+
+          {detectedBundles.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {detectedBundles.slice(0, 12).map((b) => (
+                <span
+                  key={b.id}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-950/60 border border-cyan-800/60 text-[11px] font-mono text-cyan-300"
+                >
+                  <Globe className="w-3 h-3 shrink-0" />
+                  <span>{b.displayName}</span>
+                  <span className="text-slate-400">·</span>
+                  <span>{b.files.length}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* File types to include */}
         <div className="mt-6 pt-6 border-t border-slate-800">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <label className="text-xs font-semibold text-slate-300">File types to include</label>
+            <label className="text-xs font-semibold text-slate-300">{t.organize.fileTypesTitle}</label>
             <button
               type="button"
               onClick={() => setConfig({ ...config, excludedExtensions: [] })}
               className="text-xs text-cyan-400 hover:text-cyan-300 cursor-pointer"
             >
-              Include all
+              {t.organize.includeAll}
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-2">
@@ -237,8 +332,8 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
                     })}
                     className="accent-cyan-500"
                   />
-                  <span className="font-mono">{extension ? `.${extension}` : 'No extension'}</span>
-                  <span className="text-slate-500 truncate">{CATEGORY_FOLDER_NAMES[category]}</span>
+                  <span className="font-mono">{extension ? `.${extension}` : t.organize.noExtension}</span>
+                  <span className="text-slate-500 truncate">{t.organize.folderNames[category]}</span>
                   <span className="ml-auto tabular-nums text-slate-500">{count}</span>
                 </label>
               );
@@ -248,7 +343,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
 
         <div className="mt-6 pt-6 border-t border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4">
           <label className="text-xs font-semibold text-slate-300">
-            Output root folder
+            {t.organize.outputRoot}
             <input
               type="text"
               value={config.outputFolderName}
@@ -258,27 +353,27 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             />
           </label>
           <label className="text-xs font-semibold text-slate-300">
-            Destination folder prefix
+            {t.organize.folderPrefix}
             <input
               type="text"
               value={config.folderPrefix}
               onChange={(event) => setConfig({ ...config, folderPrefix: event.target.value })}
-              placeholder="Optional"
+              placeholder={t.organize.optional}
               className="mt-2 block w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-2 text-slate-200 font-mono font-normal"
             />
           </label>
           <label className="text-xs font-semibold text-slate-300">
-            Destination folder suffix
+            {t.organize.folderSuffix}
             <input
               type="text"
               value={config.folderSuffix}
               onChange={(event) => setConfig({ ...config, folderSuffix: event.target.value })}
-              placeholder="Optional"
+              placeholder={t.organize.optional}
               className="mt-2 block w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-2 text-slate-200 font-mono font-normal"
             />
           </label>
           <label className="text-xs font-semibold text-slate-300">
-            Same-name files in a destination folder
+            {t.organize.collisionLabel}
             <select
               value={config.collisionResolution}
               onChange={(event) => setConfig({
@@ -287,57 +382,42 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
               })}
               className="mt-2 block w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-2 text-slate-200 font-normal"
             >
-              <option value="number_suffix">Keep both with numbered names</option>
-              <option value="skip">Skip later duplicates</option>
+              <option value="number_suffix">{t.organize.collisionKeepBoth}</option>
+              <option value="skip">{t.organize.collisionSkip}</option>
             </select>
           </label>
         </div>
 
         {/* Sorter Strategy Controls */}
         <div className="pt-6">
-          <label className="text-xs font-semibold text-slate-300 block mb-2">Sorting Strategy</label>
+          <label className="text-xs font-semibold text-slate-300 block mb-2">{t.organize.strategyLabel}</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-            {[
-              {
-                id: 'category_date',
-                label: 'Category + Date',
-                desc: 'e.g. Documents/2025/10/',
-              },
-              {
-                id: 'category',
-                label: 'Format Category',
-                desc: 'e.g. Documents/, Images/',
-              },
-              {
-                id: 'extension_date',
-                label: 'Extension + Date',
-                desc: 'e.g. PDF/2025-10/',
-              },
-              {
-                id: 'extension',
-                label: 'By Extension',
-                desc: 'e.g. PDF/, XLSX/, JPG/',
-              },
-              {
-                id: 'date',
-                label: 'By Date Only',
-                desc: 'e.g. 2025/10/12/',
-              },
-            ].map((strat) => (
-              <button
-                key={strat.id}
-                type="button"
-                onClick={() => setConfig({ ...config, strategy: strat.id as OrganizeStrategy })}
-                className={`p-3 rounded-lg text-left text-xs transition-colors cursor-pointer border ${
-                  config.strategy === strat.id
-                    ? 'bg-slate-800 border-cyan-500 text-slate-100'
-                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <div className="font-semibold text-slate-200">{strat.label}</div>
-                <div className="text-[11px] text-slate-500 font-mono mt-0.5">{strat.desc}</div>
-              </button>
-            ))}
+            {(
+              [
+                'category_date',
+                'category',
+                'extension_date',
+                'extension',
+                'date',
+              ] as OrganizeStrategy[]
+            ).map((stratId) => {
+              const strat = t.organize.strategies[stratId];
+              return (
+                <button
+                  key={stratId}
+                  type="button"
+                  onClick={() => setConfig({ ...config, strategy: stratId })}
+                  className={`p-3 rounded-lg text-left text-xs transition-colors cursor-pointer border ${
+                    config.strategy === stratId
+                      ? 'bg-slate-800 border-cyan-500 text-slate-100'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="font-semibold text-slate-200">{strat.label}</div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{strat.desc}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -349,7 +429,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                Date Folder Format:
+                {t.organize.dateFormatLabel}
               </span>
               <div className="flex gap-2">
                 {['YYYY/MM', 'YYYY-MM', 'YYYY/MM/DD', 'YYYY-Quarter'].map((fmt) => (
@@ -372,7 +452,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             </div>
 
             <div className="flex items-center gap-3 text-xs text-slate-400">
-              <span>Timestamp Source:</span>
+              <span>{t.organize.timestampSource}</span>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -383,7 +463,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
                       : 'bg-slate-950 border-slate-800 text-slate-400'
                   }`}
                 >
-                  Last Modified Date
+                  {t.organize.lastModifiedDate}
                 </button>
                 <button
                   type="button"
@@ -394,7 +474,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
                       : 'bg-slate-950 border-slate-800 text-slate-400'
                   }`}
                 >
-                  Creation Date
+                  {t.organize.creationDate}
                 </button>
               </div>
             </div>
@@ -406,8 +486,8 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-cyan-400" />
-              <label className="text-xs font-semibold text-slate-300">Custom Priority Rules</label>
-              <span className="text-xs text-slate-500">(Override default strategy for specific extensions)</span>
+              <label className="text-xs font-semibold text-slate-300">{t.organize.customRulesTitle}</label>
+              <span className="text-xs text-slate-500">{t.organize.customRulesHint}</span>
             </div>
             <button
               type="button"
@@ -415,7 +495,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
               className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 cursor-pointer font-medium"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Custom Rule</span>
+              <span>{t.organize.addCustomRule}</span>
             </button>
           </div>
 
@@ -423,21 +503,21 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg mb-3 flex flex-wrap items-center gap-3 text-xs">
               <input
                 type="text"
-                placeholder="Rule Name (e.g. Design Assets)"
+                placeholder={t.organize.ruleNamePlaceholder}
                 value={newRuleName}
                 onChange={(e) => setNewRuleName(e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 flex-1 min-w-[140px]"
               />
               <input
                 type="text"
-                placeholder="Extensions: psd, ai, figma"
+                placeholder={t.organize.ruleExtsPlaceholder}
                 value={newRuleExts}
                 onChange={(e) => setNewRuleExts(e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 font-mono w-48"
               />
               <input
                 type="text"
-                placeholder="Target Folder: Creative/Assets"
+                placeholder={t.organize.ruleFolderPlaceholder}
                 value={newRuleFolder}
                 onChange={(e) => setNewRuleFolder(e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 font-mono w-48"
@@ -447,7 +527,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
                 onClick={handleAddCustomRule}
                 className="px-3 py-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded cursor-pointer"
               >
-                Save Rule
+                {t.organize.saveRule}
               </button>
             </div>
           )}
@@ -478,7 +558,7 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
       {/* Target Directory Clusters Summary */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
         <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3">
-          Destination Directory Breakdown ({destinationFolders.length} folders created)
+          {t.organize.breakdownTitle(destinationFolders.length)}
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {destinationFolders.map(([folder, count]) => (
@@ -488,12 +568,12 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
             >
               <div className="flex items-center gap-2 text-cyan-400 mb-1">
                 <Folder className="w-4 h-4 shrink-0" />
-                <span className="text-xs font-semibold font-mono truncate text-slate-200">
+                <span className="text-xs font-semibold font-mono truncate text-slate-200" title={folder}>
                   {folder}
                 </span>
               </div>
               <span className="text-[11px] font-mono tabular-nums text-slate-500">
-                {count} {count === 1 ? 'file' : 'files'}
+                {count} {count === 1 ? t.fileSingular : t.filesCount}
               </span>
             </div>
           ))}
@@ -504,15 +584,19 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-300">
-            <span className="font-semibold text-slate-100">Live Organization Routing</span>
+            <span className="font-semibold text-slate-100">{t.organize.liveRouting}</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">{includedResults.length} files included</span>
+            <span className="font-mono tabular-nums">
+              {includedResults.length} {t.organize.filesIncluded}
+            </span>
             {excludedTypeCount > 0 && (
-              <span className="text-slate-500">{excludedTypeCount} excluded by type</span>
+              <span className="text-slate-500">
+                {excludedTypeCount} {t.organize.excludedByType}
+              </span>
             )}
             {previewResults.some((item) => item.hasCollision) && (
               <span className="text-amber-400">
-                {previewResults.filter((item) => item.hasCollision).length} name conflicts resolved
+                {previewResults.filter((item) => item.hasCollision).length} {t.organize.conflictsResolved}
               </span>
             )}
           </div>
@@ -522,44 +606,49 @@ export const OrganizeModule: React.FC<OrganizeModuleProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <th className="py-2.5 px-4">Source File & Path</th>
+                <th className="py-2.5 px-4">{t.organize.colSource}</th>
                 <th className="py-2.5 px-4 w-10 text-center"></th>
-                <th className="py-2.5 px-4">New Target Structured Path</th>
-                <th className="py-2.5 px-4 w-36 text-right">Rule Applied</th>
+                <th className="py-2.5 px-4">{t.organize.colTarget}</th>
+                <th className="py-2.5 px-4 w-56 text-right">{t.organize.colRule}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
               {previewResults.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-12 text-center text-slate-500 font-sans">
-                    No files in workspace. Add files or folders in Workspace tab to preview automatic folder organization.
+                    {t.organize.emptyTable}
                   </td>
                 </tr>
               ) : (
                 previewResults.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
-                    {item.originalPath}
-                  </td>
-                  <td className="py-2.5 px-4 text-center text-slate-500">
-                    <ArrowRight className="w-3.5 h-3.5 mx-auto" />
-                  </td>
-                  <td className="py-2.5 px-4 truncate max-w-sm">
-                    <span className="text-cyan-300 font-semibold">{item.targetPath}</span>
-                  </td>
-                  <td className="py-2.5 px-4 text-right text-slate-400 font-sans text-[11px]">
-                    {!item.included ? (
-                      <span className="text-rose-400 font-medium">Skipped duplicate</span>
-                    ) : item.hasCollision ? (
-                      <span className="text-amber-400 font-medium">Renamed to avoid conflict</span>
-                    ) : item.ruleMatched ? (
-                      <span className="text-amber-400 font-medium">{item.ruleMatched}</span>
-                    ) : (
-                      <span className="capitalize">{item.category}</span>
-                    )}
-                  </td>
-                </tr>
-              )))}
+                    <td className="py-2.5 px-4 text-slate-400 truncate max-w-sm">
+                      {item.originalPath}
+                    </td>
+                    <td className="py-2.5 px-4 text-center text-slate-500">
+                      <ArrowRight className="w-3.5 h-3.5 mx-auto" />
+                    </td>
+                    <td className="py-2.5 px-4 truncate max-w-sm">
+                      <span className="text-cyan-300 font-semibold">{item.targetPath}</span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right text-slate-400 font-sans text-[11px]">
+                      {!item.included ? (
+                        <span className="text-rose-400 font-medium">{t.organize.skippedDuplicate}</span>
+                      ) : item.hasCollision ? (
+                        <span className="text-amber-400 font-medium">{t.organize.renamedConflict}</span>
+                      ) : item.bundleKind && item.bundleCount ? (
+                        <span className="text-emerald-400 font-medium">
+                          {formatBundleBadge(item.bundleKind, item.bundleCount)}
+                        </span>
+                      ) : item.ruleMatched ? (
+                        <span className="text-amber-400 font-medium">{item.ruleMatched}</span>
+                      ) : (
+                        <span className="capitalize">{t.fileTable.categories[item.category]}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
