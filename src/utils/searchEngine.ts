@@ -406,3 +406,263 @@ export function generateWindowsDriveIndex(): VirtualFile[] {
     };
   });
 }
+
+export interface LiveEverythingItem {
+  name: string;
+  path: string;
+  size: number | string;
+  date_modified?: number | string;
+  type?: 'file' | 'folder';
+}
+
+export interface LiveEverythingResponse {
+  totalResults: number;
+  results: LiveEverythingItem[];
+}
+
+export function fileTimeToUnixMs(fileTime: number | string): number {
+  try {
+    const num = typeof fileTime === 'string' ? BigInt(fileTime) : BigInt(Math.floor(fileTime));
+    if (num > 100000000000000n) {
+      // Windows FILETIME (100-nanosecond intervals since Jan 1, 1601)
+      const ms = Number(num / 10000n - 11644473600000n);
+      return Number.isFinite(ms) && ms > 0 ? ms : Date.now();
+    }
+    if (num > 10000000000n) {
+      return Number(num);
+    }
+    if (num > 0n) {
+      return Number(num * 1000n);
+    }
+  } catch {
+    // fallback
+  }
+  return Date.now();
+}
+
+export function mapEverythingResultsToVirtualFiles(results: LiveEverythingItem[]): VirtualFile[] {
+  return results.map((item, idx) => {
+    const ext = getFileExtension(item.name);
+    const driveMatch = item.path.match(/^([a-zA-Z]:)/);
+    const drive = driveMatch ? driveMatch[1] : 'C:';
+    const cleanPath = item.path.replace(/^[a-zA-Z]:[\\/]/, '').replace(/\\/g, '/');
+    const relPath = cleanPath ? `${cleanPath}/${item.name}` : item.name;
+    const rawSize = typeof item.size === 'number' ? item.size : parseInt(item.size, 10) || 0;
+    const mtime = item.date_modified ? fileTimeToUnixMs(item.date_modified) : Date.now();
+
+    return {
+      id: `live-ev-${idx}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: item.name,
+      relativePath: relPath,
+      size: rawSize,
+      type: item.type === 'folder' ? 'inode/directory' : 'application/octet-stream',
+      extension: ext,
+      lastModified: mtime,
+      category: classifyFileCategory(ext),
+      selected: false,
+      drive,
+    };
+  });
+}
+
+/**
+ * Queries the live Voidtools Everything HTTP/REST Server API or Electron IPC bridge.
+ */
+export async function queryLiveEverythingHttp(
+  query: string,
+  endpoint = 'http://127.0.0.1:8080',
+  options: {
+    count?: number;
+    matchCase?: boolean;
+    useRegex?: boolean;
+    matchPath?: boolean;
+    matchWholeWord?: boolean;
+  } = {}
+): Promise<{ files: VirtualFile[]; totalResults: number; durationMs: number }> {
+  const start = performance.now();
+
+  // 1. Check if running inside Electron desktop container with IPC bridge
+  // @ts-expect-error window.electronAPI is injected via preload.cjs
+  if (typeof window !== 'undefined' && window.electronAPI?.queryLiveEverything) {
+    try {
+      // @ts-expect-error window.electronAPI
+      const res = await window.electronAPI.queryLiveEverything(query, options);
+      if (res && res.success && res.data) {
+        const files = mapEverythingResultsToVirtualFiles(res.data.results || []);
+        return {
+          files,
+          totalResults: res.data.totalResults ?? files.length,
+          durationMs: parseFloat((performance.now() - start).toFixed(2)),
+        };
+      }
+    } catch {
+      // fallback to HTTP fetch
+    }
+  }
+
+  // 2. Fetch directly from Everything HTTP Server API
+  const cleanEndpoint = endpoint.replace(/\/+$/, '');
+  const url = new URL(cleanEndpoint.startsWith('http') ? cleanEndpoint : `http://${cleanEndpoint}`);
+  url.searchParams.set('search', query || '');
+  url.searchParams.set('json', '1');
+  url.searchParams.set('count', String(options.count || 2000));
+  url.searchParams.set('path_column', '1');
+  url.searchParams.set('size_column', '1');
+  url.searchParams.set('date_modified_column', '1');
+  if (options.matchCase) url.searchParams.set('case', '1');
+  if (options.useRegex) url.searchParams.set('regex', '1');
+  if (options.matchPath) url.searchParams.set('path', '1');
+  if (options.matchWholeWord) url.searchParams.set('wholeword', '1');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+  const res = await fetch(url.toString(), {
+    signal: controller.signal,
+    headers: { Accept: 'application/json' },
+  });
+  clearTimeout(timeoutId);
+
+  if (!res.ok) {
+    throw new Error(`Everything HTTP API responded with status ${res.status}`);
+  }
+
+  const data: LiveEverythingResponse = await res.json();
+  const files = mapEverythingResultsToVirtualFiles(data.results || []);
+
+  return {
+    files,
+    totalResults: data.totalResults ?? files.length,
+    durationMs: parseFloat((performance.now() - start).toFixed(2)),
+  };
+}
+
+/**
+ * Pings the local Voidtools Everything server to check if it is active.
+ */
+export async function testLiveEverythingConnection(
+  endpoint = 'http://127.0.0.1:8080'
+): Promise<{ ok: boolean; totalResults?: number; error?: string }> {
+  try {
+    const cleanEndpoint = endpoint.replace(/\/+$/, '');
+    const url = new URL(cleanEndpoint.startsWith('http') ? cleanEndpoint : `http://${cleanEndpoint}`);
+    url.searchParams.set('search', '');
+    url.searchParams.set('json', '1');
+    url.searchParams.set('count', '1');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(url.toString(), { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const json = await res.json();
+      return { ok: true, totalResults: json.totalResults || 0 };
+    }
+    return { ok: false, error: `HTTP ${res.status}` };
+  } catch (err: unknown) {
+    return { ok: false, error: (err as Error)?.message || 'Unreachable' };
+  }
+}
+
+/**
+ * Generates a standalone, zero-install Windows .bat + PowerShell local PC indexer bridge
+ * that reads all fixed/removable drives (C:\, D:\, E:\) and serves Everything-compatible JSON
+ * with CORS + Private Network Access headers on http://127.0.0.1:3847/
+ */
+export function generateWindowsNTFSBridgeScript(): string {
+  return `<# :
+@echo off
+title OmniFile Local PC Engine Bridge (127.0.0.1:3847)
+echo ====================================================================
+echo   OmniFile Local PC Indexer Bridge - Full Drive Search (No Folders)
+echo ====================================================================
+echo Starting local Everything-compatible drive index server...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression ([System.IO.File]::ReadAllText('%~f0'))"
+exit /b
+#>
+
+$port = 3847
+$listener = New-Object System.Net.HttpListener
+$listener.Prefixes.Add("http://127.0.0.1:$port/")
+$listener.Start()
+
+Write-Host "[1/2] Scanning fixed and removable drives on this PC..." -ForegroundColor Cyan
+$index = New-Object System.Collections.Generic.List[object]
+$drives = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.IsReady -and ($_.DriveType -eq 'Fixed' -or $_.DriveType -eq 'Removable') }
+
+foreach ($drv in $drives) {
+    Write-Host "  -> Indexing $($drv.Name) ($($drv.VolumeLabel))..." -ForegroundColor Yellow
+    $stack = New-Object System.Collections.Generic.Stack[string]
+    $stack.Push($drv.RootDirectory.FullName)
+    while ($stack.Count -gt 0 -and $index.Count -lt 250000) {
+        $dir = $stack.Pop()
+        try {
+            foreach ($file in [System.IO.Directory]::EnumerateFiles($dir)) {
+                try {
+                    $fi = New-Object System.IO.FileInfo($file)
+                    $index.Add([PSCustomObject]@{
+                        name = $fi.Name
+                        path = $fi.DirectoryName
+                        size = $fi.Length
+                        date_modified = [DateTimeOffset]::new($fi.LastWriteTimeUtc).ToUnixTimeMilliseconds()
+                        type = 'file'
+                    })
+                } catch {}
+            }
+            foreach ($sub in [System.IO.Directory]::EnumerateDirectories($dir)) {
+                $name = [System.IO.Path]::GetFileName($sub)
+                if ($name -ne '$Recycle.Bin' -and $name -ne 'System Volume Information') {
+                    $stack.Push($sub)
+                }
+            }
+        } catch {}
+    }
+}
+
+Write-Host "[2/2] Indexed $($index.Count) files! Listening on http://127.0.0.1:$port/" -ForegroundColor Green
+Write-Host "Keep this window open while using OmniFile in your browser." -ForegroundColor Gray
+
+while ($listener.IsListening) {
+    $ctx = $listener.GetContext()
+    $req = $ctx.Request
+    $res = $ctx.Response
+
+    $res.Headers.Add("Access-Control-Allow-Origin", "*")
+    $res.Headers.Add("Access-Control-Allow-Private-Network", "true")
+    $res.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS")
+    $res.Headers.Add("Access-Control-Allow-Headers", "*")
+
+    if ($req.HttpMethod -eq "OPTIONS") {
+        $res.StatusCode = 204
+        $res.Close()
+        continue
+    }
+
+    $q = $req.QueryString["search"]
+    $countParam = 2000
+    if ($req.QueryString["count"]) { [int]::TryParse($req.QueryString["count"], [ref]$countParam) | Out-Null }
+
+    $matched = if ([string]::IsNullOrWhiteSpace($q)) {
+        $index
+    } else {
+        $lowerQ = $q.ToLowerInvariant()
+        $index | Where-Object { ($_.path + "\\" + $_.name).ToLowerInvariant().Contains($lowerQ) }
+    }
+
+    $matchedArr = @($matched)
+    $payload = @{
+        totalResults = $matchedArr.Count
+        results = @($matchedArr | Select-Object -First $countParam)
+    } | ConvertTo-Json -Compress -Depth 3
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+    $res.ContentType = "application/json; charset=utf-8"
+    $res.ContentLength64 = $bytes.Length
+    $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    $res.Close()
+}
+`;
+}
+
+

@@ -38,6 +38,11 @@ import {
   Cpu,
   HelpCircle,
   Database,
+  Radio,
+  Wifi,
+  WifiOff,
+  CheckCircle2,
+  Terminal,
 } from 'lucide-react';
 import {
   VirtualFile,
@@ -53,8 +58,11 @@ import {
   generateWindowsDriveIndex,
   crawlDirectoryHandle,
   parseEFUorCSVList,
+  queryLiveEverythingHttp,
+  testLiveEverythingConnection,
+  generateWindowsNTFSBridgeScript,
 } from '../utils/searchEngine';
-import { formatBytes, formatDate } from '../utils/fileHelpers';
+import { formatBytes, formatDate, triggerFileDownload } from '../utils/fileHelpers';
 
 interface DriveSearchModuleProps {
   files: VirtualFile[];
@@ -105,6 +113,15 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
   const [showArchModal, setShowArchModal] = useState<boolean>(false);
   const [activeMenu, setActiveMenu] = useState<'file' | 'edit' | 'tools' | 'help' | null>(null);
 
+  // Live Everything IPC/HTTP Bridge State
+  const [liveConnected, setLiveConnected] = useState<boolean>(false);
+  const [liveEndpoint, setLiveEndpoint] = useState<string>('http://127.0.0.1:8080');
+  const [isCheckingLive, setIsCheckingLive] = useState<boolean>(false);
+  const [showLiveBridgeModal, setShowLiveBridgeModal] = useState<boolean>(false);
+  const [liveFiles, setLiveFiles] = useState<VirtualFile[]>([]);
+  const [liveTotalCount, setLiveTotalCount] = useState<number>(0);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const directoryInputRef = useRef<HTMLInputElement>(null);
   const efuInputRef = useRef<HTMLInputElement>(null);
@@ -116,6 +133,76 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
+
+  // If running in Electron, auto-detect and auto-connect to native IPC
+  useEffect(() => {
+    // @ts-expect-error Electron API injected
+    if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+      setLiveConnected(true);
+      queryLiveEverythingHttp('', 'http://127.0.0.1:8080', { count: 2000 })
+        .then((res) => {
+          setLiveFiles(res.files);
+          setLiveTotalCount(res.totalResults);
+          setQueryDurationMs(res.durationMs);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // When live connected, query live Everything on query change
+  useEffect(() => {
+    if (!liveConnected) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await queryLiveEverythingHttp(searchQuery, liveEndpoint, {
+          matchCase,
+          useRegex,
+          matchPath,
+          matchWholeWord,
+          count: 2000,
+        });
+        if (active) {
+          setLiveFiles(res.files);
+          setLiveTotalCount(res.totalResults);
+          setQueryDurationMs(res.durationMs);
+          setLiveError(null);
+        }
+      } catch (err: unknown) {
+        if (active) {
+          setLiveError((err as Error)?.message || 'Query failed');
+        }
+      }
+    }, 100);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [searchQuery, liveConnected, liveEndpoint, matchCase, useRegex, matchPath, matchWholeWord]);
+
+  const handleTestAndConnectLive = async (targetEndpoint = liveEndpoint) => {
+    try {
+      setIsCheckingLive(true);
+      setLiveError(null);
+      const test = await testLiveEverythingConnection(targetEndpoint);
+      if (test.ok) {
+        setLiveConnected(true);
+        showCopyToast(`Connected to Voidtools Everything engine! (${test.totalResults?.toLocaleString() || 'all'} files indexed)`);
+        const initial = await queryLiveEverythingHttp(searchQuery, targetEndpoint, { count: 2000 });
+        setLiveFiles(initial.files);
+        setLiveTotalCount(initial.totalResults);
+        setQueryDurationMs(initial.durationMs);
+        setShowLiveBridgeModal(false);
+      } else {
+        setLiveError(test.error || 'Connection failed. Verify Everything HTTP Server is active.');
+      }
+    } catch (err: unknown) {
+      setLiveError((err as Error)?.message || 'Connection failed');
+    } finally {
+      setIsCheckingLive(false);
+    }
+  };
 
   // Close context menu and active menu on outside click
   useEffect(() => {
@@ -145,6 +232,16 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
 
   // Execute instantaneous Voidtools Everything query
   const rawResults = useMemo(() => {
+    if (liveConnected) {
+      if (everythingFilter === 'all') return liveFiles;
+      return executeDeepDriveSearch(
+        liveFiles,
+        { ...searchFilters, query: '' },
+        everythingFilter,
+        matchPath,
+        matchWholeWord
+      );
+    }
     const start = performance.now();
     const res = executeDeepDriveSearch(
       files,
@@ -156,7 +253,7 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
     const duration = performance.now() - start;
     setQueryDurationMs(parseFloat(duration.toFixed(2)));
     return res;
-  }, [files, searchFilters, everythingFilter, matchPath, matchWholeWord]);
+  }, [liveConnected, liveFiles, files, searchFilters, everythingFilter, matchPath, matchWholeWord]);
 
   // Sort matched results
   const searchResults = useMemo(() => {
@@ -425,6 +522,17 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                   onClick={(e) => e.stopPropagation()}
                   className="absolute left-0 top-full mt-1 w-64 bg-slate-900 border border-slate-700 rounded shadow-2xl py-1 text-slate-200 z-30 font-sans text-xs animate-fade-in"
                 >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMenu(null);
+                      setShowLiveBridgeModal(true);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+                  >
+                    <Radio className="w-3.5 h-3.5 text-orange-400" />
+                    <span>Connect Live PC Engine...</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -792,6 +900,34 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Live PC Engine / Bridge Button */}
+          <button
+            type="button"
+            onClick={() => (liveConnected ? setLiveConnected(false) : setShowLiveBridgeModal(true))}
+            className={`flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded border transition-colors cursor-pointer ${
+              liveConnected
+                ? 'text-emerald-200 bg-emerald-900/70 border-emerald-500/80 hover:bg-rose-900/70 hover:border-rose-500/80'
+                : 'text-orange-300 bg-orange-950/60 hover:bg-orange-900/80 border-orange-700/80'
+            }`}
+            title={
+              liveConnected
+                ? 'Connected to Live PC Engine (Click to disconnect)'
+                : 'Search ALL files on your PC automatically via Everything HTTP or Local PC Bridge'
+            }
+          >
+            {liveConnected ? (
+              <>
+                <Wifi className="w-3 h-3 text-emerald-400" />
+                <span>Live PC Connected ({liveTotalCount.toLocaleString()})</span>
+              </>
+            ) : (
+              <>
+                <Radio className="w-3 h-3 text-orange-400" />
+                <span>Connect Live PC</span>
+              </>
+            )}
+          </button>
+
           {/* One-click Load Windows NTFS Index */}
           <button
             type="button"
@@ -981,8 +1117,8 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
             {searchResults.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-12 px-4 text-center font-sans">
-                  {files.length === 0 ? (
-                    <div className="max-w-2xl mx-auto space-y-4">
+                  {!liveConnected && files.length === 0 ? (
+                    <div className="max-w-3xl mx-auto space-y-4">
                       <div className="inline-flex p-3 bg-slate-900 border border-slate-700/80 rounded-full shadow-lg">
                         <Search className="w-7 h-7 text-orange-400" />
                       </div>
@@ -990,13 +1126,32 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                         <h3 className="text-sm font-semibold text-slate-100">
                           Voidtools Everything Search Engine
                         </h3>
-                        <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto">
-                          Ready to search all files across your PC. Choose how you want to index:
+                        <p className="text-[11px] text-slate-400 mt-1 max-w-lg mx-auto">
+                          Search every file across your PC without choosing folders: connect the live local PC engine, simulate the Windows NTFS table, crawl a root drive, or import an <code className="text-amber-300">.efu</code> list.
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-left pt-1">
-                        {/* 1. Instant NTFS Simulation */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-left pt-1">
+                        {/* 1. Live PC Engine Bridge (Full PC without choosing folders) */}
+                        <div
+                          onClick={() => setShowLiveBridgeModal(true)}
+                          className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-orange-500/40 hover:border-orange-400 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-1.5 text-orange-400 font-semibold text-xs mb-1">
+                              <Radio className="w-3.5 h-3.5 text-orange-400 group-hover:scale-110 transition-transform" />
+                              <span>1. Live PC Engine</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              Connect directly to Voidtools Everything or run our 1-click PC Bridge to index all drives (C:\, D:\, E:\) with zero folder prompts.
+                            </p>
+                          </div>
+                          <span className="inline-block mt-3 text-[10px] font-mono font-medium text-orange-300 bg-orange-950/60 px-2 py-0.5 rounded border border-orange-800/60 w-fit">
+                            Full PC • Live Index
+                          </span>
+                        </div>
+
+                        {/* 2. Instant NTFS Simulation */}
                         <div
                           onClick={handleLoadWindowsNTFSIndex}
                           className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 hover:border-cyan-500/60 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
@@ -1004,10 +1159,10 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                           <div>
                             <div className="flex items-center gap-1.5 text-cyan-400 font-semibold text-xs mb-1">
                               <Cpu className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
-                              <span>1. Load NTFS Index</span>
+                              <span>2. Load NTFS Index</span>
                             </div>
                             <p className="text-[11px] text-slate-400 leading-relaxed">
-                              Instantly populates drives (C:\, D:\, E:\) with complete Windows OS, User folders, and Apps to search right now.
+                              Instantly populates drives (C:\, D:\, E:\) with Windows OS, User folders, and Apps right in the browser.
                             </p>
                           </div>
                           <span className="inline-block mt-3 text-[10px] font-mono font-medium text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/60 w-fit">
@@ -1015,7 +1170,7 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                           </span>
                         </div>
 
-                        {/* 2. Direct PC Drive Indexing */}
+                        {/* 3. Direct PC Drive Indexing */}
                         <div
                           onClick={handleIndexRealPCDrive}
                           className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 hover:border-emerald-500/60 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
@@ -1023,10 +1178,10 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                           <div>
                             <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-xs mb-1">
                               <HardDrive className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-                              <span>2. Index PC Drive (C:\)</span>
+                              <span>3. Index PC Drive (C:\)</span>
                             </div>
                             <p className="text-[11px] text-slate-400 leading-relaxed">
-                              Point to your actual hard drive or user home folder. Crawls your local files in real-time with zero cloud uploads.
+                              Point to your local drive or user home folder directly in Chrome/Edge with zero cloud uploads.
                             </p>
                           </div>
                           <span className="inline-block mt-3 text-[10px] font-mono font-medium text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60 w-fit">
@@ -1034,7 +1189,7 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                           </span>
                         </div>
 
-                        {/* 3. Import Everything EFU */}
+                        {/* 4. Import Everything EFU */}
                         <div
                           onClick={() => efuInputRef.current?.click()}
                           className="p-3 bg-slate-900/90 hover:bg-slate-850 border border-slate-700/80 hover:border-amber-500/60 rounded-lg cursor-pointer transition-all group shadow-sm flex flex-col justify-between"
@@ -1042,7 +1197,7 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                           <div>
                             <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-xs mb-1">
                               <UploadCloud className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
-                              <span>3. Import .EFU List</span>
+                              <span>4. Import .EFU List</span>
                             </div>
                             <p className="text-[11px] text-slate-400 leading-relaxed">
                               Load an exported Voidtools Everything File List (.efu or .csv) to query 500,000+ PC files in sub-milliseconds.
@@ -1061,7 +1216,7 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                           className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
                         >
                           <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Why does native Everything find files automatically without choosing a folder?</span>
+                          <span>How does full-PC indexing work in Web vs Desktop .EXE?</span>
                         </button>
                       </div>
                     </div>
@@ -1183,7 +1338,14 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-emerald-400 font-medium">Index: Active (NTFS/FAT/RAM)</span>
+          {liveConnected ? (
+            <span className="text-emerald-400 font-medium flex items-center gap-1.5">
+              <Wifi className="w-3 h-3" />
+              <span>Live PC Engine ({liveTotalCount.toLocaleString()} total PC files)</span>
+            </span>
+          ) : (
+            <span className="text-emerald-400 font-medium">Index: Active (NTFS/FAT/RAM)</span>
+          )}
           <span className="text-slate-500">Query: {queryDurationMs} ms</span>
         </div>
       </div>
@@ -1195,9 +1357,39 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
           className="fixed z-50 w-56 bg-slate-900 border border-slate-700 rounded shadow-2xl py-1 text-slate-200 text-xs font-sans animate-fade-in"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-1 font-semibold text-slate-400 text-[10px] uppercase tracking-wider border-b border-slate-800">
+          <div className="px-3 py-1 font-semibold text-slate-400 text-[10px] uppercase tracking-wider border-b border-slate-800 truncate">
             {contextMenu.file.name}
           </div>
+          {/* Electron native OS actions */}
+          {typeof window !== 'undefined' && (window as unknown as { electronAPI?: { openPath?: (p: string) => void; showItemInFolder?: (p: string) => void } }).electronAPI?.openPath && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  const full = `${contextMenu.file!.drive || 'C:'}\\${contextMenu.file!.relativePath.replace(/\//g, '\\')}`;
+                  (window as unknown as { electronAPI: { openPath: (p: string) => void } }).electronAPI.openPath(full);
+                  setContextMenu((prev) => ({ ...prev, isOpen: false }));
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer font-medium text-emerald-300"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open File</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const full = `${contextMenu.file!.drive || 'C:'}\\${contextMenu.file!.relativePath.replace(/\//g, '\\')}`;
+                  (window as unknown as { electronAPI: { showItemInFolder: (p: string) => void } }).electronAPI.showItemInFolder(full);
+                  setContextMenu((prev) => ({ ...prev, isOpen: false }));
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-blue-600 hover:text-white flex items-center gap-2 cursor-pointer"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                <span>Open Path in Explorer</span>
+              </button>
+              <div className="my-1 border-t border-slate-800" />
+            </>
+          )}
           <button
             type="button"
             onClick={() => handleCopyFullPath(contextMenu.file!)}
@@ -1361,6 +1553,134 @@ export const DriveSearchModule: React.FC<DriveSearchModuleProps> = ({
                 className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded transition-colors cursor-pointer"
               >
                 Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. Connect Live PC Engine Modal (Voidtools Everything HTTP OR 1-Click Local NTFS Bridge) */}
+      {showLiveBridgeModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowLiveBridgeModal(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-2xl w-full p-6 text-slate-200 font-sans space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-orange-950/70 border border-orange-700/60 rounded-lg text-orange-400">
+                  <Radio className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Connect Full-PC Everything Engine (No Folder Picker)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Index every drive on your Windows PC automatically in real time
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLiveBridgeModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Option A: 1-Click OmniFile Local PC Bridge */}
+              <div className="p-4 bg-slate-950 border border-emerald-800/60 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
+                    <Terminal className="w-4 h-4" />
+                    <span>Option 1: OmniFile Zero-Install Local PC Bridge (Recommended)</span>
+                  </div>
+                  <span className="text-[10px] font-mono bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">
+                    127.0.0.1:3847
+                  </span>
+                </div>
+                <p className="text-slate-400 leading-relaxed">
+                  Download & double-click <code className="text-emerald-300">OmniFile-Local-PC-Bridge.bat</code> on your Windows PC. It scans all fixed & removable drives (<code className="text-slate-300">C:\</code>, <code className="text-slate-300">D:\</code>, <code className="text-slate-300">E:\</code>) locally without installing anything and streams results right into this web window.
+                </p>
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const script = generateWindowsNTFSBridgeScript();
+                      const blob = new Blob([script], { type: 'text/plain' });
+                      triggerFileDownload(blob, 'OmniFile-Local-PC-Bridge.bat');
+                      setLiveEndpoint('http://127.0.0.1:3847');
+                      showCopyToast('Downloaded OmniFile-Local-PC-Bridge.bat! Double-click it, then click Connect.');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download OmniFile-Local-PC-Bridge.bat</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isCheckingLive}
+                    onClick={() => {
+                      setLiveEndpoint('http://127.0.0.1:3847');
+                      handleTestAndConnectLive('http://127.0.0.1:3847');
+                    }}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-emerald-700/70 text-emerald-300 font-medium rounded-lg transition-colors cursor-pointer"
+                  >
+                    Connect to Local Bridge (:3847)
+                  </button>
+                </div>
+              </div>
+
+              {/* Option B: Voidtools Everything Built-in HTTP Server */}
+              <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2.5">
+                <div className="flex items-center gap-2 text-orange-400 font-semibold text-xs">
+                  <Search className="w-4 h-4" />
+                  <span>Option 2: Connect Existing Voidtools Everything.exe (HTTP Server)</span>
+                </div>
+                <p className="text-slate-400 leading-relaxed">
+                  Already running Voidtools Everything? Enable <strong className="text-slate-200">Tools → Options → HTTP Server → Enable HTTP Server</strong> (Port 8080), or compile OmniFile via the <strong className="text-cyan-300">Windows .EXE</strong> header button so Electron hooks into Everything automatically.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={liveEndpoint}
+                    onChange={(e) => setLiveEndpoint(e.target.value)}
+                    placeholder="http://127.0.0.1:8080"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={isCheckingLive}
+                    onClick={() => handleTestAndConnectLive(liveEndpoint)}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    {isCheckingLive ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+                    <span>Test & Connect</span>
+                  </button>
+                </div>
+              </div>
+
+              {liveError && (
+                <div className="p-3 bg-rose-950/60 border border-rose-800/80 rounded-lg text-rose-300 flex items-center gap-2 text-xs">
+                  <WifiOff className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{liveError} — Make sure the Local Bridge or Everything HTTP Server is running on your PC.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+              <span>Running the Desktop .EXE skips browser limits and auto-indexes on startup.</span>
+              <button
+                type="button"
+                onClick={() => setShowLiveBridgeModal(false)}
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>
